@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -46,7 +46,7 @@ import java.io.File
 import java.io.FileNotFoundException
 
 object PluginManager {
-    class PluginNotFoundException(private val plugin: String) : FileNotFoundException(plugin),
+    class PluginNotFoundException(val plugin: String) : FileNotFoundException(plugin),
             BaseService.ExpectedException {
         override fun getLocalizedMessage() = SagerNet.application.getString(R.string.plugin_unknown, plugin)
     }
@@ -101,15 +101,22 @@ object PluginManager {
 
     private var receiver: BroadcastReceiver? = null
     private var cachedPlugins: PluginList? = null
-    fun fetchPlugins() = synchronized(this) {
+    private var cachedPluginsSkipInternal: PluginList? = null
+    fun fetchPlugins(skipInternal: Boolean) = synchronized(this) {
         if (receiver == null) receiver = SagerNet.application.listenForPackageChanges {
             synchronized(this) {
                 receiver = null
                 cachedPlugins = null
+                cachedPluginsSkipInternal = null
             }
         }
-        if (cachedPlugins == null) cachedPlugins = PluginList()
-        cachedPlugins!!
+        if (skipInternal) {
+            if (cachedPlugins == null) cachedPlugins = PluginList(skipInternal)
+            cachedPlugins!!
+        } else {
+            if (cachedPluginsSkipInternal == null) cachedPluginsSkipInternal = PluginList(skipInternal)
+            cachedPluginsSkipInternal!!
+        }
     }
 
     private fun buildUri(id: String) = Uri.Builder()

@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -21,17 +19,15 @@
 
 package io.nekohasekai.sagernet.fmt.v2ray;
 
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonToken;
 
-import org.jetbrains.annotations.NotNull;
-
-import java.io.ObjectOutput;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import io.nekohasekai.sagernet.fmt.gson.JsonLazyInterface;
 import io.nekohasekai.sagernet.fmt.gson.JsonOr;
@@ -74,6 +70,7 @@ public class V2RayConfig {
             public Boolean skipFallback;
             public List<String> domains;
             public List<String> expectIPs;
+            public boolean concurrency;
 
         }
 
@@ -88,7 +85,12 @@ public class V2RayConfig {
         public String tag;
         public List<String> domains;
         public List<String> expectIPs;
+        public String queryStrategy;
 
+        public Boolean disableFallback;
+        public Boolean disableFallbackIfMatch;
+
+        public Boolean disableExpire;
     }
 
     public RoutingObject routing;
@@ -115,6 +117,12 @@ public class V2RayConfig {
             public String outboundTag;
             public String balancerTag;
 
+            // SagerNet private
+
+            public List<Integer> uidList;
+            public List<String> ssidList;
+            public String networkType;
+
         }
 
         public List<BalancerObject> balancers;
@@ -123,6 +131,20 @@ public class V2RayConfig {
 
             public String tag;
             public List<String> selector;
+            public StrategyObject strategy;
+
+            public static class StrategyObject {
+
+                public String type;
+                public StrategyLeastPingConfig settings;
+
+                public static class StrategyLeastPingConfig {
+
+                    public String observerTag;
+
+                }
+
+            }
 
         }
 
@@ -183,6 +205,7 @@ public class V2RayConfig {
             public Boolean enabled;
             public List<String> destOverride;
             public Boolean metadataOnly;
+            public Boolean routeOnly;
 
         }
 
@@ -207,6 +230,7 @@ public class V2RayConfig {
         }
 
         public InboundObject ctx;
+
         public void init(InboundObject ctx) {
             this.ctx = ctx;
         }
@@ -214,7 +238,7 @@ public class V2RayConfig {
         @Nullable
         @Override
         protected Class<? extends InboundConfigurationObject> getType() {
-            switch (ctx.protocol.toLowerCase()) {
+            switch (ctx.protocol.toLowerCase(Locale.ROOT)) {
                 case "dokodemo-door":
                     return DokodemoDoorInboundConfigurationObject.class;
                 case "http":
@@ -349,6 +373,9 @@ public class V2RayConfig {
         public String password;
         public Integer level;
         public String network;
+        public String plugin;
+        public String pluginOpts;
+        public List<String> pluginArgs;
 
     }
 
@@ -387,6 +414,8 @@ public class V2RayConfig {
         public StreamSettingsObject streamSettings;
         public ProxySettingsObject proxySettings;
         public MuxObject mux;
+        public String domainStrategy;
+        public Long fallbackDelayMs;
 
         public void init() {
             if (settings != null) {
@@ -405,6 +434,7 @@ public class V2RayConfig {
 
             public Boolean enabled;
             public Integer concurrency;
+            public String packetEncoding;
 
         }
 
@@ -415,12 +445,13 @@ public class V2RayConfig {
         public LazyOutboundConfigurationObject() {
         }
 
-        public LazyOutboundConfigurationObject(OutboundObject ctx,OutboundConfigurationObject value) {
+        public LazyOutboundConfigurationObject(OutboundObject ctx, OutboundConfigurationObject value) {
             super(value);
             init(ctx);
         }
 
         private OutboundObject ctx;
+
         public void init(OutboundObject ctx) {
             this.ctx = ctx;
         }
@@ -428,7 +459,7 @@ public class V2RayConfig {
         @Nullable
         @Override
         protected Class<? extends OutboundConfigurationObject> getType() {
-            switch (ctx.protocol.toLowerCase()) {
+            switch (ctx.protocol.toLowerCase(Locale.ROOT)) {
                 case "blackhole":
                     return BlackholeOutboundConfigurationObject.class;
                 case "dns":
@@ -445,10 +476,18 @@ public class V2RayConfig {
                     return VLESSOutboundConfigurationObject.class;
                 case "shadowsocks":
                     return ShadowsocksOutboundConfigurationObject.class;
+                case "shadowsocks_sing":
+                    return ShadowsocksSingOutboundConfigurationObject.class;
                 case "trojan":
                     return TrojanOutboundConfigurationObject.class;
+                case "trojan_sing":
+                    return TrojanSingOutboundConfigurationObject.class;
                 case "loopback":
                     return LoopbackOutboundConfigurationObject.class;
+                case "wireguard":
+                    return WireGuardOutbounzConfigurationObject.class;
+                case "ssh":
+                    return SSHOutbountConfigurationObject.class;
             }
             return null;
         }
@@ -460,6 +499,8 @@ public class V2RayConfig {
     public static class BlackholeOutboundConfigurationObject implements OutboundConfigurationObject {
 
         public ResponseObject response;
+        public Boolean keepConnection;
+        public Integer userLevel;
 
         public static class ResponseObject {
             public String type;
@@ -472,6 +513,9 @@ public class V2RayConfig {
         public String network;
         public String address;
         public Integer port;
+
+        // SagerNet private
+        public Integer userLevel;
 
     }
 
@@ -501,6 +545,8 @@ public class V2RayConfig {
     public static class SocksOutboundConfigurationObject implements OutboundConfigurationObject {
 
         public List<ServerObject> servers;
+        public String version;
+        public Boolean uot;
 
         public static class ServerObject {
 
@@ -523,6 +569,7 @@ public class V2RayConfig {
     public static class VMessOutboundConfigurationObject implements OutboundConfigurationObject {
 
         public List<ServerObject> vnext;
+        public String packetEncoding;
 
         public static class ServerObject {
 
@@ -536,6 +583,7 @@ public class V2RayConfig {
                 public Integer alterId;
                 public String security;
                 public Integer level;
+                public String experimental;
 
             }
 
@@ -555,14 +603,44 @@ public class V2RayConfig {
             public String password;
             public Integer level;
             public String email;
+            public Boolean uot;
+            public Boolean experimentReducedIvHeadEntropy;
+            public Boolean encryptedProtocolExtension;
 
         }
+
+        public String plugin;
+        public String pluginOpts;
+        public List<String> pluginArgs;
+
+    }
+
+    public static class ShadowsocksSingOutboundConfigurationObject implements OutboundConfigurationObject {
+
+        public String address;
+        public Integer port;
+        public String method;
+        public String password;
+        public String key;
+        public Boolean reducedIvHeadEntropy;
+
+    }
+
+    public static class TrojanSingOutboundConfigurationObject implements OutboundConfigurationObject {
+
+        public String address;
+        public Integer port;
+        public String password;
+        public String serverName;
+        public List<String> nextProtos;
+        public Boolean insecure;
 
     }
 
     public static class VLESSOutboundConfigurationObject implements OutboundConfigurationObject {
 
         public List<ServerObject> vnext;
+        public String packetEncoding;
 
         public static class ServerObject {
 
@@ -606,6 +684,32 @@ public class V2RayConfig {
 
     }
 
+    public static class WireGuardOutbounzConfigurationObject implements OutboundConfigurationObject {
+
+        public String address;
+        public Integer port;
+        public String network;
+        public List<String> localAddresses;
+        public String privateKey;
+        public String peerPublicKey;
+        public String preSharedKey;
+        public Integer mtu;
+        public Integer userLevel;
+
+    }
+
+    public static class SSHOutbountConfigurationObject implements OutboundConfigurationObject {
+
+        public String address;
+        public Integer port;
+        public String user;
+        public String password;
+        public String privateKey;
+        public String publicKey;
+        public Integer userLevel;
+
+    }
+
     public TransportObject transport;
 
     public static class TransportObject {
@@ -626,7 +730,7 @@ public class V2RayConfig {
         public String network;
         public String security;
         public TLSObject tlsSettings;
-        public XTLSObject xtlsSettings;
+        public TLSObject xtlsSettings;
         public TcpObject tcpSettings;
         public KcpObject kcpSettings;
         public WebSocketObject wsSettings;
@@ -654,31 +758,7 @@ public class V2RayConfig {
         public List<String> alpn;
         public List<CertificateObject> certificates;
         public Boolean disableSystemRoot;
-
-        public static class CertificateObject {
-
-            public String usage;
-            public String certificateFile;
-            public String keyFile;
-            public List<String> certificate;
-            public List<String> key;
-
-        }
-
-    }
-
-    public static class XTLSObject {
-
-        public String serverName;
-        public Boolean allowInsecure;
-        public List<String> alpn;
-        public String minVersion;
-        public String maxVersion;
-        public Boolean preferServerCipherSuites;
-        public String cipherSuites;
-        public List<CertificateObject> certificates;
-        public Boolean disableSystemRoot;
-        public Boolean enableSessionResumption;
+        public List<String> pinnedPeerCertificateChainSha256;
 
         public static class CertificateObject {
 
@@ -797,10 +877,20 @@ public class V2RayConfig {
     public static class GrpcObject {
 
         public String serviceName;
+        public String mode;
 
     }
 
     public Map<String, Object> stats;
+
+    public List<FakeDnsObject> fakedns;
+
+    public static class FakeDnsObject {
+
+        public String ipPool;
+        public Integer poolSize;
+
+    }
 
     public BrowserForwarderObject browserForwarder;
 
@@ -810,6 +900,53 @@ public class V2RayConfig {
         public Integer listenPort;
 
     }
+
+    public ReverseObject reverse;
+
+    public static class ReverseObject {
+        public List<BridgeObject> bridges;
+        public List<PortalObject> portals;
+
+        public static class BridgeObject {
+            public String tag;
+            public String domain;
+        }
+
+        public static class PortalObject {
+            public String tag;
+            public String domain;
+        }
+    }
+
+    public ObservatoryObject observatory;
+
+    public static class ObservatoryObject {
+        public Set<String> subjectSelector;
+        public String probeUrl;
+        public String probeInterval;
+        public Boolean enableConcurrency;
+    }
+
+    public MultiObservatoryObject multiObservatory;
+
+    public static class MultiObservatoryObject {
+
+        public List<MultiObservatoryItem> observers;
+
+        public static class MultiObservatoryItem {
+            public String tag;
+            public ObservatoryObject settings;
+        }
+    }
+
+    public static class PingObject {
+        public String protocol;
+        public String gateway4;
+        public String gateway6;
+        public Boolean disableIPv6;
+    }
+
+    public PingObject ping;
 
     public void init() {
         if (inbounds != null) {

@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -29,7 +29,6 @@ class TestParseV2Ray : TestCase() {
     fun testParseV2rayNv1() {
 
         val address = "42.255.255.254"
-        val alterId = 4
         val uuid = "59f34e8c-f310-49b0-b240-11663e365601"
         val network = "tcp"
         val port = 11451
@@ -45,7 +44,6 @@ class TestParseV2Ray : TestCase() {
         )
 
         assertEquals(address, vmess.serverAddress)
-        assertEquals(alterId, vmess.alterId)
         assertEquals(uuid, vmess.uuid)
         assertEquals(network, vmess.type)
         assertEquals(port, vmess.serverPort)
@@ -56,7 +54,6 @@ class TestParseV2Ray : TestCase() {
     fun testParseV2rayNv2() {
 
         val address = "42.255.255.254";
-        val alterId = 4;
         val uuid = "59f34e8c-f310-49b0-b240-11663e365601";
         val network = "tcp";
         val port = 11451;
@@ -70,13 +67,12 @@ class TestParseV2Ray : TestCase() {
                     "sCIsInRscyI6Im5vbmUiLCJ0eXBlIjoibm9uZSIsInYiOjJ9Cg==")
 
         assertEquals(address, vmess.serverAddress)
-        assertEquals(alterId, vmess.alterId)
         assertEquals(uuid, vmess.uuid)
         assertEquals(network, vmess.type)
         assertEquals(port, vmess.serverPort)
         assertEquals(comment, vmess.name)
 
-        vmess.initDefaultValues()
+        vmess.initializeDefaultValues()
         assertEquals(parseV2RayN(vmess.toV2rayN()).applyDefaultValues(), vmess)
 
     }
@@ -92,8 +88,8 @@ class TestParseV2Ray : TestCase() {
         assertEquals(vless.type, "grpc")
         assertEquals(vless.grpcServiceName, "FuckGFW")
 
-        vless.initDefaultValues()
-        assertEquals(parseV2Ray(vless.toUri(true)).applyDefaultValues(), vless)
+        vless.initializeDefaultValues()
+        assertEquals(parseV2Ray(vless.toUri()).applyDefaultValues(), vless)
     }
 
 }

@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -23,10 +21,12 @@ package io.nekohasekai.sagernet.fmt.shadowsocksr
 
 import cn.hutool.core.codec.Base64
 import cn.hutool.json.JSONObject
+import io.nekohasekai.sagernet.IPv6Mode
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.ktx.applyDefaultValues
 import io.nekohasekai.sagernet.ktx.decodeBase64UrlSafe
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import io.nekohasekai.sagernet.ktx.queryParameter
+import libcore.Libcore
 import java.util.*
 
 fun parseShadowsocksR(url: String): ShadowsocksRBean {
@@ -42,18 +42,18 @@ fun parseShadowsocksR(url: String): ShadowsocksRBean {
         password = params[5].substringBefore("/").decodeBase64UrlSafe()
     }
 
-    val httpUrl = ("https://localhost" + params[5].substringAfter("/")).toHttpUrl()
+    val httpUrl = Libcore.parseURL("https://localhost" + params[5].substringAfter("/"))
 
-    runCatching {
-        bean.obfsParam = httpUrl.queryParameter("obfsparam")!!.decodeBase64UrlSafe()
-    }
-    runCatching {
-        bean.protocolParam = httpUrl.queryParameter("protoparam")!!.decodeBase64UrlSafe()
+    httpUrl.queryParameter("obfsparam")?.let {
+        bean.obfsParam = it.decodeBase64UrlSafe()
     }
 
-    val remarks = httpUrl.queryParameter("remarks")
-    if (!remarks.isNullOrBlank()) {
-        bean.name = remarks.decodeBase64UrlSafe()
+    httpUrl.queryParameter("protoparam")?.let {
+        bean.protocolParam = it.decodeBase64UrlSafe()
+    }
+
+    httpUrl.queryParameter("remarks")?.let {
+        bean.name = it.decodeBase64UrlSafe()
     }
 
     return bean
@@ -64,31 +64,35 @@ fun ShadowsocksRBean.toUri(): String {
 
     return "ssr://" + Base64.encodeUrlSafe(
         "%s:%d:%s:%s:%s:%s/?obfsparam=%s&protoparam=%s&remarks=%s".format(
-            Locale.ENGLISH, serverAddress, serverPort, protocol, method, obfs,
+            Locale.ENGLISH,
+            serverAddress,
+            serverPort,
+            protocol,
+            method,
+            obfs,
             Base64.encodeUrlSafe("%s".format(Locale.ENGLISH, password)),
             Base64.encodeUrlSafe("%s".format(Locale.ENGLISH, obfsParam)),
             Base64.encodeUrlSafe("%s".format(Locale.ENGLISH, protocolParam)),
-            Base64.encodeUrlSafe("%s".format(Locale.ENGLISH, name ?: ""))
+            Base64.encodeUrlSafe(
+                "%s".format(
+                    Locale.ENGLISH, name ?: ""
+                )
+            )
         )
     )
 }
 
 fun ShadowsocksRBean.buildShadowsocksRConfig(): String {
     return JSONObject().also {
-        it["server"] = serverAddress
-        it["server_port"] = serverPort
+        it["server"] = finalAddress
+        it["server_port"] = finalPort
         it["method"] = method
         it["password"] = password
         it["protocol"] = protocol
         it["protocol_param"] = protocolParam
         it["obfs"] = obfs
         it["obfs_param"] = obfsParam
-        it["ipv6"] = DataStore.ipv6Route
-        if (DataStore.enableLocalDNS) {
-            it["dns"] = "127.0.0.1:${DataStore.localDNSPort}"
-        } else {
-            it["dns"] = DataStore.remoteDNS
-        }
+        it["ipv6"] = DataStore.ipv6Mode >= IPv6Mode.ENABLE
     }.toStringPretty()
 }
 

@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -23,7 +23,6 @@ package io.nekohasekai.sagernet.plugin
 
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.widget.Toast
 import io.nekohasekai.sagernet.SagerNet
 
 class PluginList : ArrayList<Plugin>() {
@@ -34,15 +33,18 @@ class PluginList : ArrayList<Plugin>() {
     }
 
     val lookup = mutableMapOf<String, Plugin>().apply {
-        for (plugin in this@PluginList) {
+        for (plugin in this@PluginList.toList()) {
             fun check(old: Plugin?) {
-                if (old != null && old !== plugin) {
+                if (old != null && old != plugin) {
+                    this@PluginList.remove(old)
+                }
+               /* if (old != null && old !== plugin) {
                     val packages = this@PluginList.filter { it.id == plugin.id }
                         .joinToString { it.packageName }
                     val message = "Conflicting plugins found from: $packages"
                     Toast.makeText(SagerNet.application, message, Toast.LENGTH_LONG).show()
                     throw IllegalStateException(message)
-                }
+                }*/
             }
             check(put(plugin.id, plugin))
         }

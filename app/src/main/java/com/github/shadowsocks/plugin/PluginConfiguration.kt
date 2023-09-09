@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -54,7 +54,7 @@ class PluginConfiguration(val pluginsOptions: MutableMap<String, PluginOptions>,
 
     fun getOptions(
             id: String = selected,
-            defaultConfig: () -> String? = { PluginManager.fetchPlugins().lookup[id]?.defaultConfig }
+            defaultConfig: () -> String? = { PluginManager.fetchPlugins(true).lookup[id]?.defaultConfig }
     ) = if (id.isEmpty()) PluginOptions() else pluginsOptions[id] ?: PluginOptions(id, defaultConfig())
 
     override fun toString(): String {

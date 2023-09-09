@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -23,6 +21,7 @@ package io.nekohasekai.sagernet.fmt.v2ray;
 
 import com.esotericsoftware.kryo.io.ByteBufferInput;
 import com.esotericsoftware.kryo.io.ByteBufferOutput;
+import com.v2ray.core.common.net.packetaddr.PacketAddrType;
 
 import cn.hutool.core.lang.UUID;
 import cn.hutool.core.util.StrUtil;
@@ -150,8 +149,18 @@ public abstract class StandardV2RayBean extends AbstractBean {
     // --------------------------------------- //
 
     public String grpcServiceName;
+    public String grpcMode;
     public Integer wsMaxEarlyData;
+    public String earlyDataHeaderName;
+
+    public String certificates;
+    public String pinnedPeerCertificateChainSha256;
+
+    // --------------------------------------- //
+
     public Boolean wsUseBrowserForwarder;
+    public Boolean allowInsecure;
+    public Integer packetEncoding;
 
     // --------------------------------------- //
 
@@ -163,12 +172,19 @@ public abstract class StandardV2RayBean extends AbstractBean {
     public String flow;
 
     @Override
-    public void initDefaultValues() {
-        super.initDefaultValues();
+    public boolean allowInsecure() {
+        return allowInsecure;
+    }
+
+    @Override
+    public void initializeDefaultValues() {
+        super.initializeDefaultValues();
 
         if (StrUtil.isBlank(uuid)) uuid = "";
 
         if (StrUtil.isBlank(type)) type = "tcp";
+        else if ("h2".equals(type)) type = "http";
+
         if (StrUtil.isBlank(host)) host = "";
         if (StrUtil.isBlank(path)) path = "";
         if (StrUtil.isBlank(headerType)) headerType = "";
@@ -181,15 +197,21 @@ public abstract class StandardV2RayBean extends AbstractBean {
         if (StrUtil.isBlank(alpn)) alpn = "";
 
         if (StrUtil.isBlank(grpcServiceName)) grpcServiceName = "";
+        if (StrUtil.isBlank(grpcMode)) grpcMode = "";
         if (wsMaxEarlyData == null) wsMaxEarlyData = 0;
         if (wsUseBrowserForwarder == null) wsUseBrowserForwarder = false;
+        if (certificates == null) certificates = "";
+        if (pinnedPeerCertificateChainSha256 == null) pinnedPeerCertificateChainSha256 = "";
+        if (earlyDataHeaderName == null) earlyDataHeaderName = "";
+        if (allowInsecure == null) allowInsecure = false;
+        if (packetEncoding == null) packetEncoding = PacketAddrType.None_VALUE;
         if (StrUtil.isBlank(flow)) flow = "";
 
     }
 
     @Override
     public void serialize(ByteBufferOutput output) {
-        output.writeInt(0);
+        output.writeInt(8);
         super.serialize(output);
 
         output.writeString(uuid);
@@ -213,6 +235,7 @@ public abstract class StandardV2RayBean extends AbstractBean {
                 output.writeString(path);
                 output.writeInt(wsMaxEarlyData);
                 output.writeBoolean(wsUseBrowserForwarder);
+                output.writeString(earlyDataHeaderName);
                 break;
             }
             case "http": {
@@ -227,6 +250,7 @@ public abstract class StandardV2RayBean extends AbstractBean {
             }
             case "grpc": {
                 output.writeString(grpcServiceName);
+                output.writeString(grpcMode);
             }
         }
 
@@ -236,6 +260,9 @@ public abstract class StandardV2RayBean extends AbstractBean {
             case "tls": {
                 output.writeString(sni);
                 output.writeString(alpn);
+                output.writeString(certificates);
+                output.writeString(pinnedPeerCertificateChainSha256);
+                output.writeBoolean(allowInsecure);
                 break;
             }
             case "xtls": {
@@ -245,6 +272,13 @@ public abstract class StandardV2RayBean extends AbstractBean {
                 break;
             }
         }
+
+        if (this instanceof VMessBean) {
+            output.writeBoolean(((VMessBean) this).experimentalAuthenticatedLength);
+            output.writeBoolean(((VMessBean) this).experimentalNoTerminationSignal);
+        }
+
+        output.writeInt(packetEncoding);
     }
 
     @Override
@@ -272,6 +306,9 @@ public abstract class StandardV2RayBean extends AbstractBean {
                 path = input.readString();
                 wsMaxEarlyData = input.readInt();
                 wsUseBrowserForwarder = input.readBoolean();
+                if (version >= 2) {
+                    earlyDataHeaderName = input.readString();
+                }
                 break;
             }
             case "http": {
@@ -286,6 +323,16 @@ public abstract class StandardV2RayBean extends AbstractBean {
             }
             case "grpc": {
                 grpcServiceName = input.readString();
+                if (version >= 8) {
+                    grpcMode = input.readString();
+                    switch (grpcMode) {
+                        case "multi":
+                        case "raw":
+                            break;
+                        default:
+                            grpcMode = "";
+                    }
+                }
             }
         }
 
@@ -294,6 +341,13 @@ public abstract class StandardV2RayBean extends AbstractBean {
             case "tls": {
                 sni = input.readString();
                 alpn = input.readString();
+                if (version >= 1) {
+                    certificates = input.readString();
+                    pinnedPeerCertificateChainSha256 = input.readString();
+                }
+                if (version >= 3) {
+                    allowInsecure = input.readBoolean();
+                }
                 break;
             }
             case "xtls": {
@@ -302,14 +356,28 @@ public abstract class StandardV2RayBean extends AbstractBean {
                 flow = input.readString();
             }
         }
-
-        initDefaultValues();
+        if (this instanceof VMessBean && version != 4 && version < 6) {
+            input.readInt();
+        }
+        if (this instanceof VMessBean && version >= 4) {
+            ((VMessBean) this).experimentalAuthenticatedLength = input.readBoolean();
+            ((VMessBean) this).experimentalNoTerminationSignal = input.readBoolean();
+        }
+        if (version >= 7) {
+            packetEncoding = input.readInt();
+        }
     }
 
     @Override
     public void applyFeatureSettings(AbstractBean other) {
+        if (!(other instanceof StandardV2RayBean)) return;
         StandardV2RayBean bean = ((StandardV2RayBean) other);
-        bean.wsUseBrowserForwarder = wsUseBrowserForwarder;
+        if (wsUseBrowserForwarder) {
+            bean.wsUseBrowserForwarder = true;
+        }
+        if (allowInsecure) {
+            bean.allowInsecure = true;
+        }
     }
 
     public String uuidOrGenerate() {

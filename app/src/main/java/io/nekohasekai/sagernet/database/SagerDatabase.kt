@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -21,11 +19,8 @@
 
 package io.nekohasekai.sagernet.database
 
-import androidx.room.Database
-import androidx.room.Room
-import androidx.room.RoomDatabase
-import androidx.room.TypeConverters
-import dev.matrix.roomigrant.GenerateRoomMigrations
+import androidx.room.*
+import androidx.room.migration.AutoMigrationSpec
 import io.nekohasekai.sagernet.Key
 import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.database.preference.KeyValuePair
@@ -35,35 +30,62 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 
 @Database(
-    entities = [ProxyGroup::class, ProxyEntity::class, RuleEntity::class, KeyValuePair::class],
-    version = 1
+    entities = [ProxyGroup::class, ProxyEntity::class, RuleEntity::class, StatsEntity::class],
+    version = 17,
+    autoMigrations = [AutoMigration(
+        from = 12,
+        to = 14,
+    ), AutoMigration(
+        from = 14, to = 15, spec = SagerDatabase_Migration_14_15::class
+    ), AutoMigration(
+        from = 15,
+        to = 16,
+    ), AutoMigration(
+        from = 16,
+        to = 17,
+    ), AutoMigration(
+        from = 15,
+        to = 17,
+    )]
 )
 @TypeConverters(value = [KryoConverters::class, GsonConverters::class])
-@GenerateRoomMigrations
 abstract class SagerDatabase : RoomDatabase() {
 
     companion object {
+        @Suppress("EXPERIMENTAL_API_USAGE")
         private val instance by lazy {
             SagerNet.application.getDatabasePath(Key.DB_PROFILE).parentFile?.mkdirs()
             Room.databaseBuilder(SagerNet.application, SagerDatabase::class.java, Key.DB_PROFILE)
-                .addMigrations(*SagerDatabase_Migrations.build())
+                .addMigrations(
+                    SagerDatabase_Migration_1_2,
+                    SagerDatabase_Migration_2_3,
+                    SagerDatabase_Migration_3_4,
+                    SagerDatabase_Migration_4_5,
+                    SagerDatabase_Migration_5_6,
+                    SagerDatabase_Migration_6_7,
+                    SagerDatabase_Migration_7_8,
+                    SagerDatabase_Migration_8_9,
+                    SagerDatabase_Migration_9_10,
+                    SagerDatabase_Migration_10_11,
+                    SagerDatabase_Migration_11_12
+                )
+                .fallbackToDestructiveMigrationOnDowngrade()
                 .allowMainThreadQueries()
                 .enableMultiInstanceInvalidation()
-                .fallbackToDestructiveMigration()
                 .setQueryExecutor { GlobalScope.launch { it.run() } }
                 .build()
         }
 
-        val profileCacheDao get() = instance.profileCacheDao()
         val groupDao get() = instance.groupDao()
         val proxyDao get() = instance.proxyDao()
         val rulesDao get() = instance.rulesDao()
+        val statsDao get() = instance.statsDao()
 
     }
 
-    abstract fun profileCacheDao(): KeyValuePair.Dao
     abstract fun groupDao(): ProxyGroup.Dao
     abstract fun proxyDao(): ProxyEntity.Dao
     abstract fun rulesDao(): RuleEntity.Dao
+    abstract fun statsDao(): StatsEntity.Dao
 
 }

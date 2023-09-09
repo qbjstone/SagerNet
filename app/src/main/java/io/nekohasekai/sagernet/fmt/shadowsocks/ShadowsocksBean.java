@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -21,6 +19,8 @@
 
 package io.nekohasekai.sagernet.fmt.shadowsocks;
 
+import androidx.annotation.NonNull;
+
 import com.esotericsoftware.kryo.io.ByteBufferInput;
 import com.esotericsoftware.kryo.io.ByteBufferOutput;
 
@@ -35,24 +35,33 @@ public class ShadowsocksBean extends AbstractBean {
     public String method;
     public String password;
     public String plugin;
+    public Boolean uot;
+    public Boolean encryptedProtocolExtension;
+    public Boolean experimentReducedIvHeadEntropy;
 
     @Override
-    public void initDefaultValues() {
-        super.initDefaultValues();
+    public void initializeDefaultValues() {
+        super.initializeDefaultValues();
 
         if (StrUtil.isBlank(method)) method = "aes-256-gcm";
         if (method == null) method = "";
         if (password == null) password = "";
         if (plugin == null) plugin = "";
+        if (uot == null) uot = false;
+        if (encryptedProtocolExtension == null) encryptedProtocolExtension = false;
+        if (experimentReducedIvHeadEntropy == null) experimentReducedIvHeadEntropy = false;
     }
 
     @Override
     public void serialize(ByteBufferOutput output) {
-        output.writeInt(0);
+        output.writeInt(3);
         super.serialize(output);
         output.writeString(method);
         output.writeString(password);
         output.writeString(plugin);
+        output.writeBoolean(experimentReducedIvHeadEntropy);
+        output.writeBoolean(uot);
+        output.writeBoolean(encryptedProtocolExtension);
     }
 
     @Override
@@ -62,6 +71,25 @@ public class ShadowsocksBean extends AbstractBean {
         method = input.readString();
         password = input.readString();
         plugin = input.readString();
+        if (version >= 1) {
+            experimentReducedIvHeadEntropy = input.readBoolean();
+        }
+        if (version >= 2) {
+            uot = input.readBoolean();
+        }
+        if (version >= 3) {
+            encryptedProtocolExtension = input.readBoolean();
+        }
+    }
+
+    @Override
+    public void applyFeatureSettings(AbstractBean other) {
+        if (!(other instanceof ShadowsocksBean)) return;
+        ShadowsocksBean bean = ((ShadowsocksBean) other);
+        if (uot) {
+            bean.uot = true;
+        }
+        bean.experimentReducedIvHeadEntropy = experimentReducedIvHeadEntropy;
     }
 
     @NotNull
@@ -70,4 +98,16 @@ public class ShadowsocksBean extends AbstractBean {
         return KryoConverters.deserialize(new ShadowsocksBean(), KryoConverters.serialize(this));
     }
 
+    public static final Creator<ShadowsocksBean> CREATOR = new CREATOR<ShadowsocksBean>() {
+        @NonNull
+        @Override
+        public ShadowsocksBean newInstance() {
+            return new ShadowsocksBean();
+        }
+
+        @Override
+        public ShadowsocksBean[] newArray(int size) {
+            return new ShadowsocksBean[size];
+        }
+    };
 }

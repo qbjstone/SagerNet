@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -21,16 +19,19 @@
 
 package io.nekohasekai.sagernet.ui
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.text.util.Linkify
 import android.view.View
-import android.widget.TextView
-import androidx.core.content.FileProvider
+import androidx.activity.result.component1
+import androidx.activity.result.component2
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.recyclerview.widget.RecyclerView
 import com.danielstone.materialaboutlibrary.MaterialAboutFragment
@@ -39,88 +40,50 @@ import com.danielstone.materialaboutlibrary.model.MaterialAboutCard
 import com.danielstone.materialaboutlibrary.model.MaterialAboutList
 import io.nekohasekai.sagernet.BuildConfig
 import io.nekohasekai.sagernet.R
+import io.nekohasekai.sagernet.databinding.LayoutAboutBinding
+import io.nekohasekai.sagernet.fmt.PluginEntry
 import io.nekohasekai.sagernet.ktx.*
 import io.nekohasekai.sagernet.plugin.PluginManager
 import io.nekohasekai.sagernet.widget.ListHolderListener
-import libv2ray.Libv2ray
-import java.io.File
-import java.io.IOException
-import java.io.PrintWriter
-
+import libcore.Libcore
 
 class AboutFragment : ToolbarFragment(R.layout.layout_about) {
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(null)
-    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        val binding = LayoutAboutBinding.bind(view)
+
         ViewCompat.setOnApplyWindowInsetsListener(view, ListHolderListener)
         toolbar.setTitle(R.string.menu_about)
 
-        parentFragmentManager.beginTransaction().replace(R.id.fragment_holder, AboutContent())
+        parentFragmentManager.beginTransaction()
+            .replace(R.id.about_fragment_holder, AboutContent())
             .commitAllowingStateLoss()
 
         runOnDefaultDispatcher {
             val license = view.context.assets.open("LICENSE").bufferedReader().readText()
-            val licenseText = view.findViewById<TextView>(R.id.license)
             onMainDispatcher {
-                licenseText.text = license
-                Linkify.addLinks(licenseText, Linkify.EMAIL_ADDRESSES or Linkify.WEB_URLS)
+                binding.license.text = license
+                Linkify.addLinks(binding.license, Linkify.EMAIL_ADDRESSES or Linkify.WEB_URLS)
             }
         }
     }
 
     class AboutContent : MaterialAboutFragment() {
 
-        fun exportLog() {
-            val context = requireContext()
-
-            runOnDefaultDispatcher {
-                val logDir = File(app.cacheDir, "log")
-                logDir.mkdir()
-                val logFile = File.createTempFile("SagerNet-", ".log", logDir)
-                logFile.outputStream().use { out ->
-                    PrintWriter(out.bufferedWriter()).use { writer ->
-                        writer.println("SagerNet ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) on API ${Build.VERSION.SDK_INT}")
-                        @Suppress("DEPRECATION")
-                        writer.println("ABI ${Build.CPU_ABI} (${Build.SUPPORTED_ABIS.joinToString(", ")})")
-                        writer.flush()
-                        try {
-                            Runtime.getRuntime()
-                                .exec(arrayOf("logcat", "-d")).inputStream.use { it.copyTo(out) }
-                        } catch (e: IOException) {
-                            Logs.w(e)
-                            e.printStackTrace(writer)
-                        }
-                        writer.println()
-                    }
-                }
-                startActivity(
-                    Intent.createChooser(
-                        Intent(Intent.ACTION_SEND)
-                            .setType("text/x-log")
-                            .setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            .putExtra(
-                                Intent.EXTRA_STREAM,
-                                FileProvider.getUriForFile(
-                                    context,
-                                    app.packageName + ".log",
-                                    logFile
-                                )
-                            ),
-                        context.getString(R.string.abc_shareactionprovider_share_with)
-                    )
-                )
-            }
+        val requestIgnoreBatteryOptimizations = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { (resultCode, _) ->
+            parentFragmentManager.beginTransaction()
+                .replace(R.id.about_fragment_holder, AboutContent())
+                .commitAllowingStateLoss()
         }
 
         override fun getMaterialAboutList(activityContext: Context): MaterialAboutList {
 
             var versionName = BuildConfig.VERSION_NAME
-            if (BuildConfig.FLAVOR == "expert") {
+            if (isExpert) {
                 versionName += "-${BuildConfig.FLAVOR}"
             }
 
@@ -133,22 +96,24 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                         .subText(versionName)
                         .setOnClickAction {
                             requireContext().launchCustomTab(
-                                Uri.parse(
-                                    "https://github.com/SagerNet/SagerNet/releases"
-                                )
+                                "https://github.com/SagerNet/SagerNet/releases"
                             )
                         }
-                        .build()
-                    )
+                        .build())
                     .addItem(MaterialAboutActionItem.Builder()
                         .icon(R.drawable.ic_baseline_airplanemode_active_24)
-                        .text(getString(R.string.version_x, "v2ray-core"))
-                        .subText(Libv2ray.getVersion())
-                        .setOnClickAction { }
-                        .build()
-                    )
+                        .text(getString(R.string.version_x, "SagerNet/v2ray-core"))
+                        .subText("v" + Libcore.getV2RayVersion())
+                        .setOnClickAction {
+                            requireContext().launchCustomTab(
+                                "https://github.com/SagerNet/v2ray-core/releases"
+                            )
+                        }
+                        .build())
                     .apply {
+                        val m = enumValues<PluginEntry>().associateBy { it.pluginId }
                         for (plugin in PluginManager.fetchPlugins()) {
+                            if (!m.containsKey(plugin.id)) continue
                             try {
                                 addItem(MaterialAboutActionItem.Builder()
                                     .icon(R.drawable.ic_baseline_nfc_24)
@@ -157,30 +122,48 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                                     .setOnClickAction {
                                         startActivity(Intent().apply {
                                             action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
-                                            data =
-                                                Uri.fromParts(
-                                                    "package",
-                                                    plugin.packageName,
-                                                    null
-                                                )
+                                            data = Uri.fromParts(
+                                                "package", plugin.packageName, null
+                                            )
                                         })
                                     }
-                                    .build()
-                                )
+                                    .build())
                             } catch (e: Exception) {
                                 Logs.w(e)
                             }
                         }
                     }
-                    .addItem(MaterialAboutActionItem.Builder()
-                        .icon(R.drawable.ic_baseline_bug_report_24)
-                        .text(R.string.logcat)
-                        .subText(R.string.logcat_summary)
-                        .setOnClickAction { exportLog() }
-                        .build()
-                    )
-                    .build()
-                )
+                    .apply {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            val pm = app.getSystemService(Context.POWER_SERVICE) as PowerManager
+                            if (!pm.isIgnoringBatteryOptimizations(app.packageName)) {
+                                addItem(MaterialAboutActionItem.Builder()
+                                    .icon(R.drawable.ic_baseline_running_with_errors_24)
+                                    .text(R.string.ignore_battery_optimizations)
+                                    .subText(R.string.ignore_battery_optimizations_sum)
+                                    .setOnClickAction {
+                                        requestIgnoreBatteryOptimizations.launch(
+                                            Intent(
+                                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                                Uri.parse("package:${app.packageName}")
+                                            )
+                                        )
+                                    }
+                                    .build())
+                            }
+                        }
+                        addItem(MaterialAboutActionItem.Builder()
+                            .icon(R.drawable.ic_baseline_card_giftcard_24)
+                            .text(R.string.donate)
+                            .subText(R.string.donate_info)
+                            .setOnClickAction {
+                                requireContext().launchCustomTab(
+                                    "https://liberapay.com/nekohasekai"
+                                )
+                            }
+                            .build())
+                    }
+                    .build())
                 .addCard(MaterialAboutCard.Builder()
                     .outline(false)
                     .title(R.string.project)
@@ -189,29 +172,28 @@ class AboutFragment : ToolbarFragment(R.layout.layout_about) {
                         .text(R.string.github)
                         .setOnClickAction {
                             requireContext().launchCustomTab(
-                                Uri.parse(
-                                    "https://github.com/SagerNet/SagerNet"
-                                )
+                                "https://github.com/SagerNet/SagerNet"
+
                             )
                         }
-                        .build()
-                    )
+                        .build())
+                    .addItem(MaterialAboutActionItem.Builder()
+                        .icon(R.drawable.baseline_translate_24)
+                        .text(R.string.translate_platform)
+                        .setOnClickAction {
+                            requireContext().launchCustomTab(
+                                "https://hosted.weblate.org/engage/sagernet/"
+
+                            )
+                        }
+                        .build())
                     .addItem(MaterialAboutActionItem.Builder()
                         .icon(R.drawable.ic_qu_shadowsocks_foreground)
                         .text(R.string.telegram)
                         .setOnClickAction {
                             requireContext().launchCustomTab(
-                                Uri.parse(
-                                    "https://t.me/SagerNet"
-                                )
+                                "https://t.me/SagerNet"
                             )
-                        }
-                        .build())
-                    .addItem(MaterialAboutActionItem.Builder()
-                        .icon(R.drawable.ic_action_copyright)
-                        .text(R.string.oss_licenses)
-                        .setOnClickAction {
-                            startActivity(Intent(context, LicenseActivity::class.java))
                         }
                         .build())
                     .build())

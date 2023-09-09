@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -39,6 +37,7 @@ import io.nekohasekai.sagernet.SagerNet
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.ktx.Logs
 import io.nekohasekai.sagernet.ktx.broadcastReceiver
+import io.nekohasekai.sagernet.ktx.readableMessage
 
 class VpnRequestActivity : AppCompatActivity() {
     private var receiver: BroadcastReceiver? = null
@@ -68,9 +67,17 @@ class VpnRequestActivity : AppCompatActivity() {
             context: Context,
             input: Void?,
         ): SynchronousResult<Boolean>? {
-            if (DataStore.serviceMode == Key.MODE_VPN) VpnService.prepare(context)?.let { intent ->
-                cachedIntent = intent
-                return null
+            if (DataStore.serviceMode == Key.MODE_VPN) {
+                try {
+                    VpnService.prepare(context)
+                } catch (e: Exception) {
+                    Logs.w(e)
+                    Toast.makeText(context, e.readableMessage, Toast.LENGTH_LONG).show()
+                    null
+                }?.let { intent ->
+                    cachedIntent = intent
+                    return null
+                }
             }
             SagerNet.startService()
             return SynchronousResult(false)

@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -34,47 +32,59 @@ import androidx.activity.result.component2
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.LayoutRes
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.preference.EditTextPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceDataStore
+import androidx.preference.SwitchPreference
+import com.github.shadowsocks.plugin.Empty
 import com.github.shadowsocks.plugin.fragment.AlertDialogFragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.takisoft.preferencex.PreferenceFragmentCompat
+import com.takisoft.preferencex.SimpleMenuPreference
 import io.nekohasekai.sagernet.Key
+import io.nekohasekai.sagernet.NetworkType
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProfileManager
 import io.nekohasekai.sagernet.database.RuleEntity
 import io.nekohasekai.sagernet.database.SagerDatabase
 import io.nekohasekai.sagernet.database.preference.OnPreferenceDataStoreChangeListener
-import io.nekohasekai.sagernet.ktx.Empty
+import io.nekohasekai.sagernet.ktx.app
 import io.nekohasekai.sagernet.ktx.onMainDispatcher
 import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
 import io.nekohasekai.sagernet.utils.DirectBoot
+import io.nekohasekai.sagernet.utils.PackageCache
+import io.nekohasekai.sagernet.widget.AppListPreference
 import io.nekohasekai.sagernet.widget.ListListener
 import io.nekohasekai.sagernet.widget.OutboundPreference
 import kotlinx.parcelize.Parcelize
 
 @Suppress("UNCHECKED_CAST")
 class RouteSettingsActivity(
-    @LayoutRes
-    resId: Int = R.layout.layout_settings_activity,
+    @LayoutRes resId: Int = R.layout.layout_settings_activity,
 ) : ThemedActivity(resId),
     OnPreferenceDataStoreChangeListener {
 
-    fun init() {
-        RuleEntity().init()
+    fun init(packageName: String?) {
+        RuleEntity().apply {
+            if (!packageName.isNullOrBlank()) {
+                packages = listOf(packageName)
+                name = app.getString(R.string.route_for, PackageCache.loadLabel(packageName))
+            }
+        }.init()
     }
 
     fun RuleEntity.init() {
         DataStore.routeName = name
         DataStore.routeDomain = domains
         DataStore.routeIP = ip
+        DataStore.routePort = port
         DataStore.routeSourcePort = sourcePort
         DataStore.routeNetwork = network
         DataStore.routeSource = source
         DataStore.routeProtocol = protocol
+        DataStore.routeAttrs = attrs
         DataStore.routeOutboundRule = outbound
         DataStore.routeOutbound = when (outbound) {
             0L -> 0
@@ -82,31 +92,43 @@ class RouteSettingsActivity(
             -2L -> 2
             else -> 3
         }
+        DataStore.routeReverse = reverse
+        DataStore.routeRedirect = redirect
+        DataStore.routePackages = packages.joinToString("\n")
+        DataStore.routeNetworkType = networkType
+        DataStore.routeSSID = ssid
     }
 
     fun RuleEntity.serialize() {
         name = DataStore.routeName
         domains = DataStore.routeDomain
         ip = DataStore.routeIP
+        port = DataStore.routePort
         sourcePort = DataStore.routeSourcePort
         network = DataStore.routeNetwork
+        source = DataStore.routeSource
         protocol = DataStore.routeProtocol
+        attrs = DataStore.routeAttrs
         outbound = when (DataStore.routeOutbound) {
             0 -> 0L
             1 -> -1L
             2 -> -2L
             else -> DataStore.routeOutboundRule
         }
+        reverse = DataStore.routeReverse
+        redirect = DataStore.routeRedirect
+        packages = DataStore.routePackages.split("\n").filter { it.isNotBlank() }
+        networkType = DataStore.routeNetworkType
+        ssid = DataStore.routeSSID
+
+        if (DataStore.editingId == 0L) {
+            enabled = true
+        }
     }
 
     fun needSave(): Boolean {
         if (!DataStore.dirty) return false
-        if (DataStore.routeDomain.isBlank() &&
-            DataStore.routeIP.isBlank() &&
-            DataStore.routeSourcePort.isBlank() &&
-            DataStore.routeNetwork.isBlank() &&
-            DataStore.routeProtocol.isBlank()
-        ) {
+        if (DataStore.routePackages.isBlank() && DataStore.routeDomain.isBlank() && DataStore.routeIP.isBlank() && DataStore.routePort.isBlank() && DataStore.routeSourcePort.isBlank() && DataStore.routeNetwork.isBlank() && DataStore.routeSource.isBlank() && DataStore.routeProtocol.isBlank() && DataStore.routeAttrs.isBlank() && !(DataStore.routeReverse && DataStore.routeRedirect.isNotBlank()) && DataStore.routeSSID.isBlank() && DataStore.routeNetworkType.isNotBlank()) {
             return false
         }
         return true
@@ -119,15 +141,13 @@ class RouteSettingsActivity(
         addPreferencesFromResource(R.xml.route_preferences)
     }
 
-    lateinit var outbound: OutboundPreference
     val selectProfileForAdd = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { (resultCode, data) ->
         if (resultCode == Activity.RESULT_OK) runOnDefaultDispatcher {
             val profile = ProfileManager.getProfile(
                 data!!.getLongExtra(
-                    ProfileSelectActivity.EXTRA_PROFILE_ID,
-                    0
+                    ProfileSelectActivity.EXTRA_PROFILE_ID, 0
                 )
             ) ?: return@runOnDefaultDispatcher
             DataStore.routeOutboundRule = profile.id
@@ -137,18 +157,73 @@ class RouteSettingsActivity(
         }
     }
 
+    val selectAppList = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { (_, _) ->
+        apps.postUpdate()
+    }
+
+    lateinit var outbound: OutboundPreference
+    lateinit var reverse: SwitchPreference
+    lateinit var redirect: EditTextPreference
+    lateinit var apps: AppListPreference
+    lateinit var networkType: SimpleMenuPreference
+    lateinit var ssid: EditTextPreference
+
     fun PreferenceFragmentCompat.viewCreated(view: View, savedInstanceState: Bundle?) {
         outbound = findPreference(Key.ROUTE_OUTBOUND)!!
+        reverse = findPreference(Key.ROUTE_REVERSE)!!
+        redirect = findPreference(Key.ROUTE_REDIRECT)!!
+        apps = findPreference(Key.ROUTE_PACKAGES)!!
+        networkType = findPreference(Key.ROUTE_NETWORK_TYPE)!!
+        ssid = findPreference(Key.ROUTE_SSID)!!
+
+        fun updateReverse(enabled: Boolean = outbound.value == "3") {
+            reverse.isVisible = enabled
+            redirect.isVisible = enabled
+            redirect.isEnabled = reverse.isChecked
+        }
+
+        updateReverse()
+
+        reverse.setOnPreferenceChangeListener { _, newValue ->
+            redirect.isEnabled = newValue as Boolean
+            true
+        }
+
         outbound.setOnPreferenceChangeListener { _, newValue ->
             if (newValue.toString() == "3") {
+                updateReverse(true)
                 selectProfileForAdd.launch(
                     Intent(
-                        this@RouteSettingsActivity,
-                        ProfileSelectActivity::class.java
+                        this@RouteSettingsActivity, ProfileSelectActivity::class.java
                     )
                 )
                 false
-            } else true
+            } else {
+                updateReverse(false)
+                true
+            }
+        }
+
+        apps.setOnPreferenceClickListener {
+            selectAppList.launch(
+                Intent(
+                    this@RouteSettingsActivity, AppListActivity::class.java
+                )
+            )
+            true
+        }
+
+        fun updateNetwork(newValue: String = networkType.value) {
+            ssid.isVisible = newValue == NetworkType.WIFI
+        }
+
+        updateNetwork()
+
+        networkType.setOnPreferenceChangeListener { _, newValue ->
+            updateNetwork(newValue as String)
+            true
         }
     }
 
@@ -188,6 +263,7 @@ class RouteSettingsActivity(
 
     companion object {
         const val EXTRA_ROUTE_ID = "id"
+        const val EXTRA_PACKAGE_NAME = "pkg"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -204,7 +280,7 @@ class RouteSettingsActivity(
             DataStore.editingId = editingId
             runOnDefaultDispatcher {
                 if (editingId == 0L) {
-                    init()
+                    init(intent.getStringExtra(EXTRA_PACKAGE_NAME))
                 } else {
                     val ruleEntity = SagerDatabase.rulesDao.getById(editingId)
                     if (ruleEntity == null) {
@@ -218,10 +294,9 @@ class RouteSettingsActivity(
 
                 onMainDispatcher {
                     supportFragmentManager.beginTransaction()
-                        .replace(R.id.settings,
-                            MyPreferenceFragmentCompat().apply {
-                                activity = this@RouteSettingsActivity
-                            })
+                        .replace(R.id.settings, MyPreferenceFragmentCompat().apply {
+                            activity = this@RouteSettingsActivity
+                        })
                         .commit()
 
                     DataStore.dirty = false
@@ -238,8 +313,7 @@ class RouteSettingsActivity(
 
         if (!needSave()) {
             onMainDispatcher {
-                AlertDialog.Builder(this@RouteSettingsActivity)
-                    .setTitle(R.string.empty_route)
+                MaterialAlertDialogBuilder(this@RouteSettingsActivity).setTitle(R.string.empty_route)
                     .setMessage(R.string.empty_route_notice)
                     .setPositiveButton(android.R.string.ok, null)
                     .show()
@@ -249,6 +323,10 @@ class RouteSettingsActivity(
 
         val editingId = DataStore.editingId
         if (editingId == 0L) {
+            if (intent.hasExtra(EXTRA_PACKAGE_NAME)) {
+                setResult(RESULT_OK, Intent())
+            }
+
             ProfileManager.createRule(RuleEntity().apply { serialize() })
         } else {
             val entity = SagerDatabase.rulesDao.getById(DataStore.editingId)
@@ -265,7 +343,7 @@ class RouteSettingsActivity(
 
     val child by lazy { supportFragmentManager.findFragmentById(R.id.settings) as MyPreferenceFragmentCompat }
 
-    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.profile_config_menu, menu)
         return true
     }
@@ -274,8 +352,7 @@ class RouteSettingsActivity(
 
     override fun onBackPressed() {
         if (needSave()) {
-            UnsavedChangesDialogFragment().apply { key() }
-                .show(supportFragmentManager, null)
+            UnsavedChangesDialogFragment().apply { key() }.show(supportFragmentManager, null)
         } else super.onBackPressed()
     }
 
@@ -349,10 +426,11 @@ class RouteSettingsActivity(
     object PasswordSummaryProvider : Preference.SummaryProvider<EditTextPreference> {
 
         override fun provideSummary(preference: EditTextPreference): CharSequence {
-            return if (preference.text.isNullOrBlank()) {
+            val text = preference.text
+            return if (text.isNullOrBlank()) {
                 preference.context.getString(androidx.preference.R.string.not_set)
             } else {
-                "\u2022".repeat(preference.text.length)
+                "\u2022".repeat(text.length)
             }
         }
 

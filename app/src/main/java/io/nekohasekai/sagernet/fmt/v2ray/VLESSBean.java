@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -21,6 +19,8 @@
 
 package io.nekohasekai.sagernet.fmt.v2ray;
 
+import androidx.annotation.NonNull;
+
 import org.jetbrains.annotations.NotNull;
 
 import cn.hutool.core.util.StrUtil;
@@ -29,8 +29,8 @@ import io.nekohasekai.sagernet.fmt.KryoConverters;
 public class VLESSBean extends StandardV2RayBean {
 
     @Override
-    public void initDefaultValues() {
-        super.initDefaultValues();
+    public void initializeDefaultValues() {
+        super.initializeDefaultValues();
 
         if (StrUtil.isBlank(encryption)) {
             encryption = "none";
@@ -43,4 +43,17 @@ public class VLESSBean extends StandardV2RayBean {
     public VLESSBean clone() {
         return KryoConverters.deserialize(new VLESSBean(), KryoConverters.serialize(this));
     }
+
+    public static final Creator<VLESSBean> CREATOR = new CREATOR<VLESSBean>() {
+        @NonNull
+        @Override
+        public VLESSBean newInstance() {
+            return new VLESSBean();
+        }
+
+        @Override
+        public VLESSBean[] newArray(int size) {
+            return new VLESSBean[size];
+        }
+    };
 }

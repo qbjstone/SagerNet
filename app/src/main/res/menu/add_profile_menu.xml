@@ -43,27 +43,97 @@
                         android:id="@+id/action_new_trojan_go"
                         android:title="@string/action_trojan_go" />
                     <item
+                        android:id="@+id/action_new_naive"
+                        android:title="@string/action_naive" />
+                    <item
+                        android:id="@+id/action_new_ping_tunnel"
+                        android:title="@string/action_ping_tunnel" />
+                    <item
+                        android:id="@+id/action_new_relay_baton"
+                        android:title="@string/action_relay_baton" />
+                    <item
+                        android:id="@+id/action_new_brook"
+                        android:title="@string/action_brook" />
+                    <item
+                        android:id="@+id/action_new_hysteria"
+                        android:title="@string/action_hysteria" />
+                    <item
+                        android:id="@+id/action_new_mieru"
+                        android:title="@string/action_mieru" />
+                    <item
+                        android:id="@+id/action_new_tuic"
+                        android:title="@string/action_tuic" />
+                    <item
+                        android:id="@+id/action_new_ssh"
+                        android:title="@string/action_ssh" />
+                    <item
+                        android:id="@+id/action_new_wg"
+                        android:title="@string/action_wireguard" />
+                    <item
+                        android:id="@+id/action_new_config"
+                        android:title="@string/custom_config" />
+                    <item
                         android:id="@+id/action_new_chain"
                         android:title="@string/proxy_chain" />
+                    <item
+                        android:id="@+id/action_new_balancer"
+                        android:title="@string/balancer" />
                 </menu>
             </item>
         </menu>
     </item>
     <item
-        android:icon="@drawable/ic_file_file_upload"
-        android:title="@string/action_export"
-        app:showAsAction="always">
+        android:id="@+id/action_clear_traffic_statistics"
+        android:title="@string/clear_traffic_statistics" />
+    <item
+        android:id="@+id/action_connection_test"
+        android:title="@string/connection_test">
         <menu>
             <item
-                android:id="@+id/action_export_clipboard"
-                android:title="@string/action_export" />
+                android:id="@+id/action_connection_icmp_ping"
+                android:title="@string/connection_test_icmp_ping" />
             <item
-                android:id="@+id/action_export_file"
-                android:title="@string/action_export_file" />
+                android:id="@+id/action_connection_tcp_ping"
+                android:title="@string/connection_test_tcp_ping" />
+            <item
+                android:id="@+id/action_connection_url_test"
+                android:title="@string/connection_test_url_test" />
+            <item
+                android:id="@+id/action_connection_test_clear_results"
+                android:title="@string/connection_test_clear_results" />
         </menu>
     </item>
     <item
-        android:id="@+id/action_clear"
-        android:title="@string/clear_profiles" />
+        android:id="@+id/action_order"
+        android:title="@string/group_order">
+        <menu>
+            <group android:checkableBehavior="single">
+                <item
+                    android:id="@+id/action_order_origin"
+                    android:title="@string/group_order_origin" />
+                <item
+                    android:id="@+id/action_order_by_name"
+                    android:title="@string/group_order_by_name" />
+                <item
+                    android:id="@+id/action_order_by_delay"
+                    android:title="@string/group_order_by_delay" />
+            </group>
+        </menu>
+    </item>
+    <item
+        android:id="@+id/action_group_filter"
+        android:title="@string/group_filter">
+        <menu>
+            <item
+                android:id="@+id/action_filter_groups"
+                android:title="@string/group_filter_groups" />
+            <item
+                android:id="@+id/group_filter_owners"
+                android:title="@string/group_filter_owners" />
+            <item
+                android:id="@+id/action_filter_tags"
+                android:title="@string/group_filter_tags" />
+        </menu>
+    </item>
 
 </menu>

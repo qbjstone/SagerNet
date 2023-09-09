@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -21,19 +19,76 @@
 
 package io.nekohasekai.sagernet.ui
 
+import android.content.res.Configuration
 import android.os.Bundle
+import android.widget.TextView
+import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
-import io.nekohasekai.sagernet.R
+import androidx.core.app.ActivityCompat
+import com.google.android.material.snackbar.Snackbar
+import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.utils.Theme
 
 abstract class ThemedActivity : AppCompatActivity {
     constructor() : super()
     constructor(contentLayoutId: Int) : super(contentLayoutId)
 
+    enum class Type {
+        Default,
+        Dialog,
+        Translucent
+    }
+
+    open val type = Type.Default
+
+    var themeResId = 0
+    var uiMode = 0
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        Theme.apply(this)
+        when (type) {
+            Type.Default -> {
+                Theme.apply(this)
+            }
+            Type.Dialog -> {
+                Theme.applyDialog(this)
+            }
+            Type.Translucent -> {
+                Theme.applyTranslucent(this)
+            }
+        }
+        Theme.applyNightTheme()
 
         super.onCreate(savedInstanceState)
+        uiMode = resources.configuration.uiMode
     }
+
+    override fun setTheme(resId: Int) {
+        super.setTheme(resId)
+
+        themeResId = resId
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+
+        if (newConfig.uiMode != uiMode) {
+            uiMode = newConfig.uiMode
+
+            if (DataStore.appTheme == Theme.BLACK) {
+                Theme.apply(this)
+            }
+
+            ActivityCompat.recreate(this)
+        }
+    }
+
+    fun snackbar(@StringRes resId: Int): Snackbar = snackbar("").setText(resId)
+    fun snackbar(text: CharSequence): Snackbar = snackbarInternal(text).apply {
+        view.findViewById<TextView>(com.google.android.material.R.id.snackbar_text).apply {
+            maxLines = 10
+        }
+    }
+
+    internal open fun snackbarInternal(text: CharSequence): Snackbar = throw NotImplementedError()
 
 }

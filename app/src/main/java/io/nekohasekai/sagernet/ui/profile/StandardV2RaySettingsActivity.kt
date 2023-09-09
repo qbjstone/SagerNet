@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -24,8 +22,10 @@ package io.nekohasekai.sagernet.ui.profile
 import android.os.Bundle
 import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceCategory
+import androidx.preference.SwitchPreference
 import com.takisoft.preferencex.PreferenceFragmentCompat
 import com.takisoft.preferencex.SimpleMenuPreference
+import com.v2ray.core.common.net.packetaddr.PacketAddrType
 import io.nekohasekai.sagernet.Key
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.database.DataStore
@@ -47,9 +47,6 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
         DataStore.serverPort = serverPort
         DataStore.serverUserId = uuid
         DataStore.serverEncryption = encryption
-        if (this is VMessBean) {
-            DataStore.serverAlterId = alterId
-        }
         DataStore.serverNetwork = type
         DataStore.serverHeader = headerType
         DataStore.serverHost = host
@@ -61,14 +58,20 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
             else -> DataStore.serverPath = path
         }
 
-        DataStore.serverHeader = headerType
         DataStore.serverSecurity = security
         DataStore.serverSNI = sni
         DataStore.serverALPN = alpn
+        DataStore.serverCertificates = certificates
+        DataStore.serverPinnedCertificateChain = pinnedPeerCertificateChainSha256
         DataStore.serverFlow = flow
         DataStore.serverQuicSecurity = quicSecurity
         DataStore.serverWsMaxEarlyData = wsMaxEarlyData
+        DataStore.serverEarlyDataHeaderName = earlyDataHeaderName
+
         DataStore.serverWsBrowserForwarding = wsUseBrowserForwarder
+        DataStore.serverAllowInsecure = allowInsecure
+        DataStore.serverPacketEncoding = packetEncoding
+        DataStore.serverGrpcMode = grpcMode
 
     }
 
@@ -78,9 +81,6 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
         serverPort = DataStore.serverPort
         uuid = DataStore.serverUserId
         encryption = DataStore.serverEncryption
-        if (this is VMessBean) {
-            alterId = DataStore.serverAlterId
-        }
         type = DataStore.serverNetwork
         headerType = DataStore.serverHeader
         host = DataStore.serverHost
@@ -93,10 +93,17 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
         security = DataStore.serverSecurity
         sni = DataStore.serverSNI
         alpn = DataStore.serverALPN
+        certificates = DataStore.serverCertificates
+        pinnedPeerCertificateChainSha256 = DataStore.serverPinnedCertificateChain
         flow = DataStore.serverFlow
         quicSecurity = DataStore.serverQuicSecurity
         wsMaxEarlyData = DataStore.serverWsMaxEarlyData
+        earlyDataHeaderName = DataStore.serverEarlyDataHeaderName
+
         wsUseBrowserForwarder = DataStore.serverWsBrowserForwarding
+        allowInsecure = DataStore.serverAllowInsecure
+        packetEncoding = DataStore.serverPacketEncoding
+        grpcMode = DataStore.serverGrpcMode
     }
 
     lateinit var encryption: SimpleMenuPreference
@@ -105,13 +112,17 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
     lateinit var requestHost: EditTextPreference
     lateinit var path: EditTextPreference
     lateinit var quicSecurity: SimpleMenuPreference
-
     lateinit var security: SimpleMenuPreference
-    lateinit var tlsSni: EditTextPreference
-    lateinit var tlsAlpn: EditTextPreference
+    lateinit var grpcMode: SimpleMenuPreference
     lateinit var xtlsFlow: SimpleMenuPreference
 
+    lateinit var securityCategory: PreferenceCategory
+    lateinit var certificates: EditTextPreference
+    lateinit var pinnedCertificateChain: EditTextPreference
+    lateinit var allowInsecure: SwitchPreference
+
     lateinit var wsCategory: PreferenceCategory
+    lateinit var vmessExperimentsCategory: PreferenceCategory
 
     override fun PreferenceFragmentCompat.createPreferences(
         savedInstanceState: Bundle?,
@@ -130,16 +141,17 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
         path = findPreference(Key.SERVER_PATH)!!
         quicSecurity = findPreference(Key.SERVER_QUIC_SECURITY)!!
         security = findPreference(Key.SERVER_SECURITY)!!
-        tlsSni = findPreference(Key.SERVER_SNI)!!
-        tlsAlpn = findPreference(Key.SERVER_ALPN)!!
+        grpcMode = findPreference(Key.SERVER_GRPC_MODE)!!
+
+        securityCategory = findPreference(Key.SERVER_SECURITY_CATEGORY)!!
+        certificates = findPreference(Key.SERVER_CERTIFICATES)!!
+        pinnedCertificateChain = findPreference(Key.SERVER_PINNED_CERTIFICATE_CHAIN)!!
+        allowInsecure = findPreference(Key.SERVER_ALLOW_INSECURE)!!
         xtlsFlow = findPreference(Key.SERVER_FLOW)!!
 
         wsCategory = findPreference(Key.SERVER_WS_CATEGORY)!!
 
-        val alterId = findPreference<EditTextPreference>(Key.SERVER_ALTER_ID)!!
         if (bean is VLESSBean) {
-            alterId.isVisible = false
-
             encryption.setEntries(R.array.vless_encryption_entry)
             encryption.setEntryValues(R.array.vless_encryption_value)
 
@@ -148,8 +160,6 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
                 encryption.value = vev[0]
             }
         } else {
-            alterId.setOnBindEditTextListener(EditTextPreferenceModifiers.Port)
-
             encryption.setEntries(R.array.vmess_encryption_entry)
             encryption.setEntryValues(R.array.vmess_encryption_value)
 
@@ -173,22 +183,25 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
             updateTle(newValue as String)
             true
         }
+
+        vmessExperimentsCategory = findPreference(Key.SERVER_VMESS_EXPERIMENTS_CATEGORY)!!
+        vmessExperimentsCategory.isVisible = bean is VMessBean
     }
 
     val tcpHeadersValue = app.resources.getStringArray(R.array.tcp_headers_value)
     val kcpQuicHeadersValue = app.resources.getStringArray(R.array.kcp_quic_headers_value)
+    val quicSecurityValue = app.resources.getStringArray(R.array.quic_security_value)
     val xtlsFlowValue = app.resources.getStringArray(R.array.xtls_flow_value)
 
     fun updateView(network: String) {
-        if (bean is VLESSBean) {
+        if (bean is StandardV2RayBean) {
             when (network) {
                 "tcp", "kcp" -> {
-                    security.setEntries(R.array.transport_layer_encryption_xray_entry)
-                    security.setEntryValues(R.array.transport_layer_encryption_xray_value)
+                    security.setEntries(R.array.transport_layer_encryption_entry)
+                    security.setEntryValues(R.array.transport_layer_encryption_value)
                     security.value = DataStore.serverSecurity
 
-                    val tlev =
-                        resources.getStringArray(R.array.transport_layer_encryption_xray_value)
+                    val tlev = resources.getStringArray(R.array.transport_layer_encryption_value)
                     if (security.value !in tlev) {
                         security.value = tlev[0]
                     }
@@ -198,8 +211,7 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
                     security.setEntryValues(R.array.transport_layer_encryption_value)
                     security.value = DataStore.serverSecurity
 
-                    val tlev =
-                        resources.getStringArray(R.array.transport_layer_encryption_value)
+                    val tlev = resources.getStringArray(R.array.transport_layer_encryption_value)
                     if (security.value !in tlev) {
                         security.value = tlev[0]
                     }
@@ -208,6 +220,21 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
         }
 
         updateTle(security.value)
+
+        val isQuic = network == "quic"
+        val isGRPC = network == "grpc"
+        val isWs = network == "ws"
+        quicSecurity.isVisible = isQuic
+        if (isQuic) {
+            if (DataStore.serverQuicSecurity !in quicSecurityValue) {
+                quicSecurity.value = quicSecurityValue[0]
+            } else {
+                quicSecurity.value = DataStore.serverQuicSecurity
+            }
+        }
+
+        wsCategory.isVisible = isWs
+        grpcMode.isVisible = isGRPC
 
         when (network) {
             "tcp" -> {
@@ -235,8 +262,6 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
                 path.setTitle(R.string.http_path)
 
                 header.isVisible = true
-                quicSecurity.isVisible = false
-                wsCategory.isVisible = false
             }
             "http" -> {
                 requestHost.setTitle(R.string.http_host)
@@ -245,8 +270,6 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
                 header.isVisible = false
                 requestHost.isVisible = true
                 path.isVisible = true
-                quicSecurity.isVisible = false
-                wsCategory.isVisible = false
             }
             "ws" -> {
                 requestHost.setTitle(R.string.ws_host)
@@ -255,8 +278,6 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
                 header.isVisible = false
                 requestHost.isVisible = true
                 path.isVisible = true
-                quicSecurity.isVisible = false
-                wsCategory.isVisible = true
             }
             "kcp" -> {
                 header.setEntries(R.array.kcp_quic_headers_entry)
@@ -274,12 +295,10 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
                 header.isVisible = true
                 requestHost.isVisible = false
                 path.isVisible = true
-                quicSecurity.isVisible = false
-                wsCategory.isVisible = false
             }
             "quic" -> {
                 header.setEntries(R.array.kcp_quic_headers_entry)
-                header.setEntryValues(R.array.kcp_quic_headers_entry)
+                header.setEntryValues(R.array.kcp_quic_headers_value)
                 path.setTitle(R.string.quic_key)
 
                 if (DataStore.serverHeader !in kcpQuicHeadersValue) {
@@ -293,8 +312,6 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
                 header.isVisible = true
                 requestHost.isVisible = false
                 path.isVisible = true
-                quicSecurity.isVisible = true
-                wsCategory.isVisible = false
             }
             "grpc" -> {
                 path.setTitle(R.string.grpc_service_name)
@@ -302,34 +319,22 @@ abstract class StandardV2RaySettingsActivity : ProfileSettingsActivity<StandardV
                 header.isVisible = false
                 requestHost.isVisible = false
                 path.isVisible = true
-                quicSecurity.isVisible = false
-                wsCategory.isVisible = false
             }
         }
     }
 
     fun updateTle(tle: String) {
-        when (tle) {
-            "tls" -> {
-                tlsSni.isVisible = true
-                tlsAlpn.isVisible = true
-                xtlsFlow.isVisible = false
-            }
-            "xtls" -> {
-                tlsSni.isVisible = true
-                tlsAlpn.isVisible = true
-                xtlsFlow.isVisible = true
-
-                if (DataStore.serverFlow !in xtlsFlowValue) {
-                    xtlsFlow.value = xtlsFlowValue[0]
-                } else {
-                    xtlsFlow.value = DataStore.serverFlow
-                }
-            }
-            else -> {
-                tlsSni.isVisible = false
-                tlsAlpn.isVisible = false
-                xtlsFlow.isVisible = false
+        val isTLS = tle == "tls"
+        val isXTLS = tle == "xtls"
+        certificates.isVisible = isTLS
+        pinnedCertificateChain.isVisible = isTLS
+        allowInsecure.isVisible = isTLS || isXTLS
+        xtlsFlow.isVisible = isXTLS
+        if (isXTLS) {
+            if (DataStore.serverFlow !in xtlsFlowValue) {
+                xtlsFlow.value = xtlsFlowValue[0]
+            } else {
+                xtlsFlow.value = DataStore.serverFlow
             }
         }
     }

@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -22,7 +22,6 @@
 package io.nekohasekai.sagernet.database.preference
 
 import androidx.preference.PreferenceDataStore
-import java.util.*
 
 @Suppress("MemberVisibilityCanBePrivate", "unused")
 open class RoomPreferenceDataStore(private val kvPairDao: KeyValuePair.Dao) :
@@ -34,6 +33,7 @@ open class RoomPreferenceDataStore(private val kvPairDao: KeyValuePair.Dao) :
     fun getLong(key: String) = kvPairDao[key]?.long
     fun getString(key: String) = kvPairDao[key]?.string
     fun getStringSet(key: String) = kvPairDao[key]?.stringSet
+    fun reset() = kvPairDao.reset()
 
     override fun getBoolean(key: String, defValue: Boolean) = getBoolean(key) ?: defValue
     override fun getFloat(key: String, defValue: Float) = getFloat(key) ?: defValue

@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -22,8 +20,11 @@
 package io.nekohasekai.sagernet.utils
 
 import android.content.Context
+import android.content.res.Configuration
+import androidx.appcompat.app.AppCompatDelegate
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.database.DataStore
+import io.nekohasekai.sagernet.ktx.app
 import io.nekohasekai.sagernet.ktx.isExpert
 
 object Theme {
@@ -48,16 +49,33 @@ object Theme {
     const val BROWN = 17
     const val GREY = 18
     const val BLUE_GREY = 19
+    const val BLACK = 20
+
+    private fun defaultTheme() = PINK
 
     fun apply(context: Context) {
-        if (isExpert) {
-            context.setTheme(getTheme())
-        } else {
-            context.setTheme(R.style.Theme_SagerNet)
-        }
+        context.setTheme(getTheme())
     }
 
-    fun getTheme() = getTheme(DataStore.appTheme)
+    fun applyDialog(context: Context) {
+        context.setTheme(getDialogTheme())
+    }
+
+    fun applyTranslucent(context: Context) {
+        context.setTheme(getTranslucentTheme())
+    }
+
+    fun getTheme(): Int {
+        return getTheme(if (isExpert) DataStore.appTheme else defaultTheme())
+    }
+
+    fun getDialogTheme(): Int {
+        return getDialogTheme(if (isExpert) DataStore.appTheme else defaultTheme())
+    }
+
+    fun getTranslucentTheme(): Int {
+        return getTranslucentTheme(if (isExpert) DataStore.appTheme else defaultTheme())
+    }
 
     fun getTheme(theme: Int): Int {
         return when (theme) {
@@ -80,8 +98,90 @@ object Theme {
             BROWN -> R.style.Theme_SagerNet_Brown
             GREY -> R.style.Theme_SagerNet_Grey
             BLUE_GREY -> R.style.Theme_SagerNet_BlueGrey
-            else -> R.style.Theme_SagerNet
+            BLACK -> if (usingNightMode()) R.style.Theme_SagerNet_Black else R.style.Theme_SagerNet_LightBlack
+            else -> getTheme(defaultTheme())
         }
+    }
+
+    fun getDialogTheme(theme: Int): Int {
+        return when (theme) {
+            RED -> R.style.Theme_SagerNet_Dialog_Red
+            PINK -> R.style.Theme_SagerNet_Dialog
+            PURPLE -> R.style.Theme_SagerNet_Dialog_Purple
+            DEEP_PURPLE -> R.style.Theme_SagerNet_Dialog_DeepPurple
+            INDIGO -> R.style.Theme_SagerNet_Dialog_Indigo
+            BLUE -> R.style.Theme_SagerNet_Dialog_Blue
+            LIGHT_BLUE -> R.style.Theme_SagerNet_Dialog_LightBlue
+            CYAN -> R.style.Theme_SagerNet_Dialog_Cyan
+            TEAL -> R.style.Theme_SagerNet_Dialog_Teal
+            GREEN -> R.style.Theme_SagerNet_Dialog_Green
+            LIGHT_GREEN -> R.style.Theme_SagerNet_Dialog_LightGreen
+            LIME -> R.style.Theme_SagerNet_Dialog_Lime
+            YELLOW -> R.style.Theme_SagerNet_Dialog_Yellow
+            AMBER -> R.style.Theme_SagerNet_Dialog_Amber
+            ORANGE -> R.style.Theme_SagerNet_Dialog_Orange
+            DEEP_ORANGE -> R.style.Theme_SagerNet_Dialog_DeepOrange
+            BROWN -> R.style.Theme_SagerNet_Dialog_Brown
+            GREY -> R.style.Theme_SagerNet_Dialog_Grey
+            BLUE_GREY -> R.style.Theme_SagerNet_Dialog_BlueGrey
+            BLACK -> if (usingNightMode()) R.style.Theme_SagerNet_Dialog_Black else R.style.Theme_SagerNet_Dialog_LightBlack
+            else -> getDialogTheme(defaultTheme())
+        }
+    }
+
+    fun getTranslucentTheme(theme: Int): Int {
+        return when (theme) {
+            RED -> R.style.Theme_SagerNet_Translucent_Red
+            PINK -> R.style.Theme_SagerNet_Translucent
+            PURPLE -> R.style.Theme_SagerNet_Translucent_Purple
+            DEEP_PURPLE -> R.style.Theme_SagerNet_Translucent_DeepPurple
+            INDIGO -> R.style.Theme_SagerNet_Translucent_Indigo
+            BLUE -> R.style.Theme_SagerNet_Translucent_Blue
+            LIGHT_BLUE -> R.style.Theme_SagerNet_Translucent_LightBlue
+            CYAN -> R.style.Theme_SagerNet_Translucent_Cyan
+            TEAL -> R.style.Theme_SagerNet_Translucent_Teal
+            GREEN -> R.style.Theme_SagerNet_Translucent_Green
+            LIGHT_GREEN -> R.style.Theme_SagerNet_Translucent_LightGreen
+            LIME -> R.style.Theme_SagerNet_Translucent_Lime
+            YELLOW -> R.style.Theme_SagerNet_Translucent_Yellow
+            AMBER -> R.style.Theme_SagerNet_Translucent_Amber
+            ORANGE -> R.style.Theme_SagerNet_Translucent_Orange
+            DEEP_ORANGE -> R.style.Theme_SagerNet_Translucent_DeepOrange
+            BROWN -> R.style.Theme_SagerNet_Translucent_Brown
+            GREY -> R.style.Theme_SagerNet_Translucent_Grey
+            BLUE_GREY -> R.style.Theme_SagerNet_Translucent_BlueGrey
+            BLACK -> if (usingNightMode()) R.style.Theme_SagerNet_Translucent_Black else R.style.Theme_SagerNet_Translucent_LightBlack
+            else -> getTranslucentTheme(defaultTheme())
+        }
+    }
+
+    var currentNightMode = -1
+    fun getNightMode(): Int {
+        if (currentNightMode == -1) {
+            currentNightMode = DataStore.nightTheme
+        }
+        return getNightMode(currentNightMode)
+    }
+
+    fun getNightMode(mode: Int): Int {
+        return when (mode) {
+            0 -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+            1 -> AppCompatDelegate.MODE_NIGHT_YES
+            2 -> AppCompatDelegate.MODE_NIGHT_NO
+            else -> AppCompatDelegate.MODE_NIGHT_AUTO_BATTERY
+        }
+    }
+
+    fun usingNightMode(): Boolean {
+        return when (DataStore.nightTheme) {
+            1 -> true
+            2 -> false
+            else -> (app.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        }
+    }
+
+    fun applyNightTheme() {
+        AppCompatDelegate.setDefaultNightMode(getNightMode())
     }
 
 }

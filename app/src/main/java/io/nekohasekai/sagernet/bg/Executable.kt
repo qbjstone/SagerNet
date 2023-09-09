@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -30,23 +30,29 @@ import java.io.File
 import java.io.IOException
 
 object Executable {
-    const val SS_LOCAL = "libsslocal.so"
-    const val SSR_LOCAL = "libssr-local.so"
-    const val TUN2SOCKS = "libtun2socks.so"
-    const val PROXYCHAINS = "libproxychains4.so"
-
-    private val EXECUTABLES = setOf(SS_LOCAL, SSR_LOCAL, TUN2SOCKS)
+    private val EXECUTABLES = setOf(
+        "libtrojan.so",
+        "libtrojan-go.so",
+        "libnaive.so",
+        "libbrook.so",
+        "libhysteria.so",
+        "libpingtunnel.so",
+        "librelaybaton.so",
+    )
 
     fun killAll() {
         for (process in File("/proc").listFiles { _, name -> TextUtils.isDigitsOnly(name) }
             ?: return) {
             val exe = File(try {
-                File(process, "cmdline").inputStream().bufferedReader().readText()
+                File(process, "cmdline").inputStream().bufferedReader().use {
+                    it.readText()
+                }
             } catch (_: IOException) {
                 continue
             }.split(Character.MIN_VALUE, limit = 2).first())
             if (EXECUTABLES.contains(exe.name)) try {
                 Os.kill(process.name.toInt(), OsConstants.SIGKILL)
+                Logs.w("SIGKILL ${exe.nameWithoutExtension} (${process.name}) succeed")
             } catch (e: ErrnoException) {
                 if (e.errno != OsConstants.ESRCH) {
                     Logs.w("SIGKILL ${exe.absolutePath} (${process.name}) failed")

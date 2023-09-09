@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -21,37 +19,38 @@
 
 package io.nekohasekai.sagernet.fmt.v2ray;
 
-import com.esotericsoftware.kryo.io.ByteBufferInput;
-import com.esotericsoftware.kryo.io.ByteBufferOutput;
+import androidx.annotation.NonNull;
 
 import org.jetbrains.annotations.NotNull;
 
 import cn.hutool.core.util.StrUtil;
+import io.nekohasekai.sagernet.fmt.AbstractBean;
 import io.nekohasekai.sagernet.fmt.KryoConverters;
 
 public class VMessBean extends StandardV2RayBean {
 
-    public int alterId;
+    public Boolean experimentalAuthenticatedLength;
+    public Boolean experimentalNoTerminationSignal;
 
     @Override
-    public void initDefaultValues() {
-        super.initDefaultValues();
+    public void initializeDefaultValues() {
+        super.initializeDefaultValues();
 
-        if (StrUtil.isBlank(encryption)) {
-            encryption = "auto";
+        encryption = StrUtil.isNotBlank(encryption) ? encryption : "auto";
+        experimentalAuthenticatedLength = experimentalAuthenticatedLength != null ? experimentalAuthenticatedLength : false;
+        experimentalNoTerminationSignal = experimentalNoTerminationSignal != null ? experimentalNoTerminationSignal : false;
+    }
+
+    @Override
+    public void applyFeatureSettings(AbstractBean other) {
+        if (!(other instanceof VMessBean)) return;
+        VMessBean bean = ((VMessBean) other);
+        if (experimentalAuthenticatedLength) {
+            bean.experimentalAuthenticatedLength = true;
         }
-    }
-
-    @Override
-    public void serialize(ByteBufferOutput output) {
-        super.serialize(output);
-        output.writeInt(alterId);
-    }
-
-    @Override
-    public void deserialize(ByteBufferInput input) {
-        super.deserialize(input);
-        alterId = input.readInt();
+        if (experimentalNoTerminationSignal) {
+            bean.experimentalNoTerminationSignal = true;
+        }
     }
 
     @NotNull
@@ -59,4 +58,17 @@ public class VMessBean extends StandardV2RayBean {
     public VMessBean clone() {
         return KryoConverters.deserialize(new VMessBean(), KryoConverters.serialize(this));
     }
+
+    public static final Creator<VMessBean> CREATOR = new CREATOR<VMessBean>() {
+        @NonNull
+        @Override
+        public VMessBean newInstance() {
+            return new VMessBean();
+        }
+
+        @Override
+        public VMessBean[] newArray(int size) {
+            return new VMessBean[size];
+        }
+    };
 }

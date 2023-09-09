@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -21,49 +19,56 @@
 
 package io.nekohasekai.sagernet.fmt.trojan
 
-import io.nekohasekai.sagernet.ktx.linkBuilder
-import io.nekohasekai.sagernet.ktx.toLink
-import io.nekohasekai.sagernet.ktx.unUrlSafe
+import cn.hutool.json.JSONArray
+import cn.hutool.json.JSONObject
+import io.nekohasekai.sagernet.IPv6Mode
+import io.nekohasekai.sagernet.database.DataStore
+import io.nekohasekai.sagernet.fmt.LOCALHOST
+import io.nekohasekai.sagernet.ktx.isExpert
+import io.nekohasekai.sagernet.ktx.isIpAddress
+import io.nekohasekai.sagernet.ktx.queryParameter
 import io.nekohasekai.sagernet.ktx.urlSafe
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import libcore.Libcore
 
 // WTF
 // https://github.com/trojan-gfw/igniter/issues/318
 fun parseTrojan(server: String): TrojanBean {
 
-    val link = server.replace("trojan://", "https://").toHttpUrlOrNull()
-        ?: error("invalid trojan link $server")
+    val link = Libcore.parseURL(server)
 
     return TrojanBean().apply {
         serverAddress = link.host
         serverPort = link.port
-        password = link.username.unUrlSafe()
+        password = link.username
 
         if (link.password.isNotBlank()) {
-            password += ":" + link.password.unUrlSafe()
+            password += ":" + link.password
         }
 
         security = link.queryParameter("security") ?: "tls"
-        sni = link.queryParameter("sni") ?: ""
-        alpn = link.queryParameter("alpn") ?: ""
-        flow = link.queryParameter("flow") ?: ""
-        name = link.fragment ?: ""
+        sni = link.queryParameter("sni") ?: link.queryParameter("peer")
+        alpn = link.queryParameter("alpn")
+        name = link.fragment
     }
 
 }
 
 fun TrojanBean.toUri(): String {
 
-    val builder = linkBuilder()
-        .username(password.urlSafe())
-        .host(serverAddress)
-        .port(serverPort)
+    val builder = Libcore.newURL("trojan")
+    builder.host = serverAddress
+    builder.port = serverPort
+    builder.username = password
 
     if (sni.isNotBlank()) {
         builder.addQueryParameter("sni", sni)
     }
     if (alpn.isNotBlank()) {
         builder.addQueryParameter("alpn", alpn)
+    }
+    if (isExpert && allowInsecure) {
+        // bad format from where?
+        builder.addQueryParameter("allowInsecure", "1")
     }
 
     when (security) {
@@ -76,10 +81,62 @@ fun TrojanBean.toUri(): String {
     }
 
     if (name.isNotBlank()) {
-        builder.encodedFragment(name.urlSafe())
+        builder.setRawFragment(name.urlSafe())
     }
 
+    return builder.string
 
-    return builder.toLink("trojan")
+}
 
+fun TrojanBean.buildTrojanConfig(port: Int): String {
+    return JSONObject().also { conf ->
+        conf["run_type"] = "client"
+        conf["local_addr"] = LOCALHOST
+        conf["local_port"] = port
+        conf["remote_addr"] = finalAddress
+        conf["remote_port"] = finalPort
+        conf["password"] = JSONArray().apply {
+            add(password)
+        }
+        conf["log_level"] = if (DataStore.enableLog) 0 else 2
+
+        conf["ssl"] = JSONObject().also {
+            if (allowInsecure) it["verify"] = false
+            if (sni.isBlank() && finalAddress == LOCALHOST && !serverAddress.isIpAddress()) {
+                sni = serverAddress
+            }
+            if (sni.isNotBlank()) it["sni"] = sni
+            if (alpn.isNotBlank()) it["alpn"] = JSONArray(alpn.split("\n"))
+        }
+    }.toStringPretty()
+}
+
+fun TrojanBean.buildTrojanGoConfig(port: Int, mux: Boolean): String {
+    return JSONObject().also { conf ->
+        conf["run_type"] = "client"
+        conf["local_addr"] = LOCALHOST
+        conf["local_port"] = port
+        conf["remote_addr"] = finalAddress
+        conf["remote_port"] = finalPort
+        conf["password"] = JSONArray().apply {
+            add(password)
+        }
+        conf["log_level"] = if (DataStore.enableLog) 0 else 2
+        if (mux && DataStore.enableMuxForAll) conf["mux"] = JSONObject().also {
+            it["enabled"] = true
+            it["concurrency"] = DataStore.muxConcurrency
+        }
+        conf["tcp"] = JSONObject().also {
+            it["prefer_ipv4"] = DataStore.ipv6Mode <= IPv6Mode.ENABLE
+        }
+
+        conf["ssl"] = JSONObject().also {
+            if (allowInsecure) it["verify"] = false
+            if (sni.isBlank() && finalAddress == LOCALHOST && !serverAddress.isIpAddress()) {
+                sni = serverAddress
+            }
+            if (sni.isNotBlank()) it["sni"] = sni
+            if (alpn.isNotBlank()) it["alpn"] = JSONArray(alpn.split("\n"))
+        }
+    }.toStringPretty()
 }

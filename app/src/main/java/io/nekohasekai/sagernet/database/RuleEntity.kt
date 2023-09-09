@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -23,13 +21,15 @@ package io.nekohasekai.sagernet.database
 
 import android.os.Parcelable
 import androidx.room.*
+import io.nekohasekai.sagernet.NetworkType
+import io.nekohasekai.sagernet.R
+import io.nekohasekai.sagernet.ktx.app
 import kotlinx.parcelize.Parcelize
 
 @Entity(tableName = "rules")
 @Parcelize
 data class RuleEntity(
-    @PrimaryKey(autoGenerate = true)
-    var id: Long = 0L,
+    @PrimaryKey(autoGenerate = true) var id: Long = 0L,
     var name: String = "",
     var userOrder: Long = 0L,
     var enabled: Boolean = false,
@@ -42,17 +42,15 @@ data class RuleEntity(
     var protocol: String = "",
     var attrs: String = "",
     var outbound: Long = 0,
+    var reverse: Boolean = false,
+    var redirect: String = "",
+    var packages: List<String> = listOf(),
+    @ColumnInfo(defaultValue = "") var ssid: String = "",
+    @ColumnInfo(defaultValue = "") var networkType: String = "",
 ) : Parcelable {
 
     fun isBypassRule(): Boolean {
-        return (domains.isNotBlank() && ip.isBlank() || ip.isNotBlank() && domains.isBlank()) &&
-                port.isBlank() &&
-                sourcePort.isBlank() &&
-                network.isBlank() &&
-                source.isBlank() &&
-                protocol.isBlank() &&
-                attrs.isBlank() &&
-                outbound == -1L
+        return (domains.isNotBlank() && ip.isBlank() || ip.isNotBlank() && domains.isBlank()) && port.isBlank() && sourcePort.isBlank() && network.isBlank() && source.isBlank() && protocol.isBlank() && attrs.isBlank() && !reverse && redirect.isBlank() && outbound == -1L && packages.isEmpty() && ssid.isBlank() && networkType.isBlank()
     }
 
     fun displayName(): String {
@@ -68,11 +66,47 @@ data class RuleEntity(
         if (source.isNotBlank()) summary += "$source\n"
         if (protocol.isNotBlank()) summary += "$protocol\n"
         if (attrs.isNotBlank()) summary += "$attrs\n"
-        return summary.trim()
+        if (reverse) summary += "$redirect\n"
+        if (packages.isNotEmpty()) summary += app.getString(
+            R.string.apps_message, packages.size
+        ) + "\n"
+        if (ssid.isNotBlank()) summary += "$ssid\n"
+        if (networkType.isNotBlank()) {
+            summary += app.getString(
+                when (networkType) {
+                    NetworkType.WIFI -> R.string.network_wifi
+                    NetworkType.BLUETOOTH -> R.string.network_bt
+                    NetworkType.ETHERNET -> R.string.network_eth
+                    else -> R.string.network_data
+                }
+            ) + "\n"
+        }
+        val lines = summary.trim().split("\n")
+        return if (lines.size > 3) {
+            lines.subList(0, 3).joinToString("\n", postfix = "\n...")
+        } else {
+            summary.trim()
+        }
+    }
+
+    fun displayOutbound(): String {
+        if (reverse) {
+            return app.getString(R.string.route_reverse)
+        }
+        return when (outbound) {
+            0L -> app.getString(R.string.route_proxy)
+            -1L -> app.getString(R.string.route_bypass)
+            -2L -> app.getString(R.string.route_block)
+            else -> ProfileManager.getProfile(outbound)?.displayName()
+                ?: app.getString(R.string.route_proxy)
+        }
     }
 
     @androidx.room.Dao
     interface Dao {
+
+        @Query("SELECT * from rules WHERE (packages != '') AND enabled = 1")
+        fun checkVpnNeeded(): List<RuleEntity>
 
         @Query("SELECT * FROM rules ORDER BY userOrder")
         fun allRules(): List<RuleEntity>
@@ -105,7 +139,10 @@ data class RuleEntity(
         fun updateRules(rules: List<RuleEntity>)
 
         @Query("DELETE FROM rules")
-        fun deleteAll()
+        fun reset()
+
+        @Insert
+        fun insert(rules: List<RuleEntity>)
 
     }
 

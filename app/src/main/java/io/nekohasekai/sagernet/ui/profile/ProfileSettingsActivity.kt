@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -33,6 +31,7 @@ import androidx.core.view.ViewCompat
 import androidx.preference.EditTextPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceDataStore
+import com.github.shadowsocks.plugin.Empty
 import com.github.shadowsocks.plugin.fragment.AlertDialogFragment
 import com.takisoft.preferencex.PreferenceFragmentCompat
 import io.nekohasekai.sagernet.Key
@@ -43,18 +42,18 @@ import io.nekohasekai.sagernet.database.ProfileManager
 import io.nekohasekai.sagernet.database.SagerDatabase
 import io.nekohasekai.sagernet.database.preference.OnPreferenceDataStoreChangeListener
 import io.nekohasekai.sagernet.fmt.AbstractBean
-import io.nekohasekai.sagernet.ktx.Empty
+import io.nekohasekai.sagernet.ktx.applyDefaultValues
 import io.nekohasekai.sagernet.ktx.onMainDispatcher
 import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
 import io.nekohasekai.sagernet.ui.ThemedActivity
 import io.nekohasekai.sagernet.utils.DirectBoot
 import io.nekohasekai.sagernet.widget.ListListener
 import kotlinx.parcelize.Parcelize
+import kotlin.properties.Delegates
 
 @Suppress("UNCHECKED_CAST")
 abstract class ProfileSettingsActivity<T : AbstractBean>(
-    @LayoutRes
-    resId: Int = R.layout.layout_settings_activity,
+    @LayoutRes resId: Int = R.layout.layout_config_settings,
 ) : ThemedActivity(resId),
     OnPreferenceDataStoreChangeListener {
 
@@ -94,9 +93,10 @@ abstract class ProfileSettingsActivity<T : AbstractBean>(
     }
 
     abstract fun createEntity(): T
-    abstract fun init()
     abstract fun T.init()
     abstract fun T.serialize()
+
+    protected var isSubscription by Delegates.notNull<Boolean>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -109,11 +109,12 @@ abstract class ProfileSettingsActivity<T : AbstractBean>(
 
         if (savedInstanceState == null) {
             val editingId = intent.getLongExtra(EXTRA_PROFILE_ID, 0L)
+            isSubscription = intent.getBooleanExtra(EXTRA_IS_SUBSCRIPTION, false)
             DataStore.editingId = editingId
             runOnDefaultDispatcher {
                 if (editingId == 0L) {
                     DataStore.editingGroup = DataStore.selectedGroupForImport()
-                    init()
+                    createEntity().applyDefaultValues().init()
                 } else {
                     val proxyEntity = SagerDatabase.proxyDao.getById(editingId)
                     if (proxyEntity == null) {
@@ -127,11 +128,11 @@ abstract class ProfileSettingsActivity<T : AbstractBean>(
                 }
 
                 onMainDispatcher {
-                    supportFragmentManager.beginTransaction()
-                        .replace(R.id.settings,
-                            MyPreferenceFragmentCompat().apply {
-                                activity = this@ProfileSettingsActivity
-                            })
+                    supportFragmentManager
+                        .beginTransaction()
+                        .replace(R.id.settings, MyPreferenceFragmentCompat().apply {
+                            activity = this@ProfileSettingsActivity
+                        })
                         .commit()
                 }
             }
@@ -141,7 +142,7 @@ abstract class ProfileSettingsActivity<T : AbstractBean>(
 
     }
 
-    suspend fun saveAndExit() {
+    open suspend fun saveAndExit() {
 
         val editingId = DataStore.editingId
         if (editingId == 0L) {
@@ -165,7 +166,7 @@ abstract class ProfileSettingsActivity<T : AbstractBean>(
 
     val child by lazy { supportFragmentManager.findFragmentById(R.id.settings) as MyPreferenceFragmentCompat }
 
-    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.profile_config_menu, menu)
         return true
     }
@@ -173,7 +174,8 @@ abstract class ProfileSettingsActivity<T : AbstractBean>(
     override fun onOptionsItemSelected(item: MenuItem) = child.onOptionsItemSelected(item)
 
     override fun onBackPressed() {
-        if (DataStore.dirty) UnsavedChangesDialogFragment().apply { key() }
+        if (DataStore.dirty) UnsavedChangesDialogFragment()
+            .apply { key() }
             .show(supportFragmentManager, null) else super.onBackPressed()
     }
 
@@ -213,6 +215,10 @@ abstract class ProfileSettingsActivity<T : AbstractBean>(
             preferenceManager.preferenceDataStore = DataStore.profileCacheStore
             activity.apply {
                 createPreferences(savedInstanceState, rootKey)
+
+                if (isSubscription) {
+//                    findPreference<Preference>(Key.PROFILE_NAME)?.isEnabled = false
+                }
             }
         }
 
@@ -237,8 +243,7 @@ abstract class ProfileSettingsActivity<T : AbstractBean>(
                     DeleteConfirmationDialogFragment().apply {
                         arg(
                             ProfileIdArg(
-                                DataStore.editingId,
-                                DataStore.editingGroup
+                                DataStore.editingId, DataStore.editingGroup
                             )
                         )
                         key()
@@ -267,10 +272,11 @@ abstract class ProfileSettingsActivity<T : AbstractBean>(
     object PasswordSummaryProvider : Preference.SummaryProvider<EditTextPreference> {
 
         override fun provideSummary(preference: EditTextPreference): CharSequence {
-            return if (preference.text.isNullOrBlank()) {
+            val text = preference.text
+            return if (text.isNullOrBlank()) {
                 preference.context.getString(androidx.preference.R.string.not_set)
             } else {
-                "\u2022".repeat(preference.text.length)
+                "\u2022".repeat(text.length)
             }
         }
 

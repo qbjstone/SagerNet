@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -23,6 +21,7 @@ package io.nekohasekai.sagernet.ui.profile
 
 import android.os.Bundle
 import androidx.preference.EditTextPreference
+import androidx.preference.SwitchPreference
 import com.takisoft.preferencex.PreferenceFragmentCompat
 import com.takisoft.preferencex.SimpleMenuPreference
 import io.nekohasekai.sagernet.Key
@@ -31,15 +30,10 @@ import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.preference.EditTextPreferenceModifiers
 import io.nekohasekai.sagernet.fmt.trojan.TrojanBean
 import io.nekohasekai.sagernet.ktx.app
-import io.nekohasekai.sagernet.ktx.applyDefaultValues
 
 class TrojanSettingsActivity : ProfileSettingsActivity<TrojanBean>() {
 
     override fun createEntity() = TrojanBean()
-
-    override fun init() {
-        TrojanBean().applyDefaultValues().init()
-    }
 
     override fun TrojanBean.init() {
         DataStore.profileName = name
@@ -49,6 +43,7 @@ class TrojanSettingsActivity : ProfileSettingsActivity<TrojanBean>() {
         DataStore.serverSecurity = security
         DataStore.serverSNI = sni
         DataStore.serverALPN = alpn
+        DataStore.serverAllowInsecure = allowInsecure
         DataStore.serverFlow = flow
     }
 
@@ -60,12 +55,14 @@ class TrojanSettingsActivity : ProfileSettingsActivity<TrojanBean>() {
         security = DataStore.serverSecurity
         sni = DataStore.serverSNI
         alpn = DataStore.serverALPN
+        allowInsecure = DataStore.serverAllowInsecure
         flow = DataStore.serverFlow
     }
 
     lateinit var security: SimpleMenuPreference
     lateinit var tlsSni: EditTextPreference
     lateinit var tlsAlpn: EditTextPreference
+    lateinit var allowInsecure: SwitchPreference
     lateinit var xtlsFlow: SimpleMenuPreference
 
     override fun PreferenceFragmentCompat.createPreferences(
@@ -83,6 +80,7 @@ class TrojanSettingsActivity : ProfileSettingsActivity<TrojanBean>() {
         security = findPreference(Key.SERVER_SECURITY)!!
         tlsSni = findPreference(Key.SERVER_SNI)!!
         tlsAlpn = findPreference(Key.SERVER_ALPN)!!
+        allowInsecure = findPreference(Key.SERVER_ALLOW_INSECURE)!!
         xtlsFlow = findPreference(Key.SERVER_FLOW)!!
 
         updateTle(security.value)
@@ -97,9 +95,11 @@ class TrojanSettingsActivity : ProfileSettingsActivity<TrojanBean>() {
     fun updateTle(tle: String) {
         when (tle) {
             "tls" -> {
+                allowInsecure.isVisible = true
                 xtlsFlow.isVisible = false
             }
             "xtls" -> {
+                allowInsecure.isVisible = false
                 xtlsFlow.isVisible = true
 
                 if (DataStore.serverFlow !in xtlsFlowValue) {

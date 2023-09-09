@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -22,6 +20,7 @@
 package io.nekohasekai.sagernet.ui
 
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.View
 import androidx.appcompat.widget.Toolbar
 import androidx.core.view.GravityCompat
@@ -40,9 +39,10 @@ open class ToolbarFragment : Fragment {
         toolbar = view.findViewById(R.id.toolbar)
         toolbar.setNavigationIcon(R.drawable.ic_navigation_menu)
         toolbar.setNavigationOnClickListener {
-            (activity as MainActivity).drawer.openDrawer(GravityCompat.START)
+            (activity as MainActivity).binding.drawerLayout.openDrawer(GravityCompat.START)
         }
     }
 
+    open fun onKeyDown(ketCode: Int, event: KeyEvent) = false
     open fun onBackPressed(): Boolean = false
 }

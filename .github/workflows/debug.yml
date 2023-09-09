@@ -13,237 +13,286 @@ on:
       - dev
 
 jobs:
-  core:
-    name: Native Build (Core)
+  setup:
+    name: Setup
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Fetch Status
-        run: git submodule status 'core/*' > core_status
-      - name: Core Cache
-        id: cache
-        uses: actions/cache@v2
+      - name: Cancel previous
+        uses: styfle/cancel-workflow-action@0.11.0
         with:
-          path: |
-            app/libs/core-release.aar
-          key: ${{ hashFiles('core_status') }}
-      - name: Gradle cache
-        uses: actions/cache@v2
-        if: steps.cache.outputs.cache-hit != 'true'
-        with:
-          path: ~/.gradle
-          key: native-${{ hashFiles('**/*.gradle') }}
-      - name: Native Build
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          echo "sdk.dir=${ANDROID_HOME}" > local.properties
-          echo "ndk.dir=${ANDROID_HOME}/ndk/21.4.7075529" >> local.properties
-          ./run libs core
-  v2ray:
-    name: Native Build (V2Ray)
+          access_token: ${{ github.token }}
+  libcore:
+    name: Native Build (LibCore)
     runs-on: ubuntu-latest
+    needs:
+      - setup
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Fetch Status
-        run: git submodule status v2ray > v2ray_status
-      - name: V2Ray Cache
+        run: git submodule status library/core > libcore_status
+      - name: LibCore Cache
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
-            app/libs/libv2ray.aar
-          key: ${{ hashFiles('bin/libs/v2ray/*', 'v2ray_status') }}
-      - name: Install Golang
-        uses: actions/setup-go@v2
-        if: steps.cache.outputs.cache-hit != 'true'
-        with:
-          go-version: 1.16
-      - name: Gradle cache
-        uses: actions/cache@v2
-        if: steps.cache.outputs.cache-hit != 'true'
-        with:
-          path: ~/.gradle
-          key: native-${{ hashFiles('**/*.gradle') }}
-      - name: Native Build
+            app/libs/libcore.aar
+          key: ${{ hashFiles('.github/workflows/*', 'bin/lib/core/*', 'libcore_status') }}
+      - name: Get latest go version
+        id: version
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          echo "sdk.dir=${ANDROID_HOME}" > local.properties
-          echo "ndk.dir=${ANDROID_HOME}/ndk/21.4.7075529" >> local.properties
-          ./run libs v2ray
-  xtls:
-    name: Native Build (XTLS)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Fetch Status
-        run: git submodule status 'xtls-plugin/*' > xtls_status
-      - name: XTLS Cache
-        id: cache
-        uses: actions/cache@v2
-        with:
-          path: |
-            xtls-plugin/src/main/jniLibs
-          key: ${{ hashFiles('bin/libs/xtls.sh', 'xtls_status') }}
-      - name: Install Golang
-        uses: actions/setup-go@v2
+          echo go_version=$(curl -s https://raw.githubusercontent.com/actions/go-versions/main/versions-manifest.json | grep -oE '"version": "[0-9]{1}.[0-9]{1,}(.[0-9]{1,})?"' | head -1 | cut -d':' -f2 | sed 's/ //g; s/"//g') >> $GITHUB_OUTPUT
+      - name: Setup Go
+        uses: actions/setup-go@v3
         if: steps.cache.outputs.cache-hit != 'true'
         with:
-          go-version: 1.16
-      - name: Gradle cache
-        uses: actions/cache@v2
-        if: steps.cache.outputs.cache-hit != 'true'
-        with:
-          path: ~/.gradle
-          key: native-${{ hashFiles('**/*.gradle') }}
+          # Bug: https://github.com/golang/go/issues/58426
+          # go-version: ${{ steps.version.outputs.go_version }}
+          go-version: 1.19.8
       - name: Native Build
         if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          echo "sdk.dir=${ANDROID_HOME}" > local.properties
-          echo "ndk.dir=${ANDROID_HOME}/ndk/21.4.7075529" >> local.properties
-          ./run libs xtls
-          ./gradlew xtls-plugin:assembleDebug
+        run: ./run lib core
   trojan-go:
     name: Native Build (Trojan-Go)
     runs-on: ubuntu-latest
+    needs:
+      - setup
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Fetch Status
-        run: git submodule status 'trojan-go-plugin/*' > trojan_go_status
+        run: git submodule status 'plugin/trojan-go/*' > trojan_go_status
       - name: Trojan-Go Cache
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: |
-            trojan-go-plugin/src/main/jniLibs
-          key: ${{ hashFiles('bin/libs/trojan_go.sh', 'trojan_go_status') }}
+            plugin/trojan-go/src/main/jniLibs
+          key: ${{ hashFiles('.github/workflows/*', 'bin/lib/trojan_go/*', 'trojan_go_status') }}
       - name: Install Golang
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v3
         if: steps.cache.outputs.cache-hit != 'true'
         with:
-          go-version: 1.16
-      - name: Gradle cache
-        uses: actions/cache@v2
-        if: steps.cache.outputs.cache-hit != 'true'
-        with:
-          path: ~/.gradle
-          key: native-${{ hashFiles('**/*.gradle') }}
+          go-version: 1.17.1
       - name: Native Build
         if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          echo "sdk.dir=${ANDROID_HOME}" > local.properties
-          echo "ndk.dir=${ANDROID_HOME}/ndk/21.4.7075529" >> local.properties
-          ./run libs trojan_go
-          ./gradlew trojan-go-plugin:assembleDebug
-  shadowsocks:
-    name: Native Build (Shadowsocks)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Fetch Status
-        run: git submodule status 'shadowsocks/*' > shadowsocks_status
-      - name: Shadowsocks Cache
-        id: cache
-        uses: actions/cache@v2
-        with:
-          path: |
-            app/libs/shadowsocks-release.aar
-          key: ${{ hashFiles('shadowsocks/build.gradle.kts', 'shadowsocks_status') }}
-      - name: Install Rust
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: ./run init action shadowsocks
-      - name: Gradle cache
-        uses: actions/cache@v2
-        if: steps.cache.outputs.cache-hit != 'true'
-        with:
-          path: ~/.gradle
-          key: native-${{ hashFiles('**/*.gradle') }}
-      - name: Native Build
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          echo "sdk.dir=${ANDROID_HOME}" > local.properties
-          echo "ndk.dir=${ANDROID_HOME}/ndk/21.4.7075529" >> local.properties
-          ./run libs shadowsocks
-  shadowsocksr:
-    name: Native Build (ShadowsocksR)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Fetch Status
-        run: git submodule status 'shadowsocksr/*' > shadowsocksr_status
-      - name: ShadowsocksR Cache
-        id: cache
-        uses: actions/cache@v2
-        with:
-          path: |
-            app/libs/shadowsocksr-release.aar
-          key: ${{ hashFiles('shadowsocksr_status') }}
-      - name: Gradle cache
-        uses: actions/cache@v2
-        if: steps.cache.outputs.cache-hit != 'true'
-        with:
-          path: ~/.gradle
-          key: native-${{ hashFiles('**/*.gradle') }}
-      - name: Native Build
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          echo "sdk.dir=${ANDROID_HOME}" > local.properties
-          echo "ndk.dir=${ANDROID_HOME}/ndk/21.4.7075529" >> local.properties
-          ./run libs shadowsocksr
-  build:
-    name: Gradle Build
+        run: ./run plugin trojan_go
+  naive:
     runs-on: ubuntu-latest
     needs:
-      - core
-      - v2ray
-      - shadowsocks
-      - shadowsocksr
+      - setup
+    name: Native Build (NaïveProxy)
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [ armeabi-v7a, arm64-v8a, x86, x86_64 ]
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+      - name: Fetch Status
+        run: git submodule status 'plugin/naive/*' > naive_status
+      - name: Naive Cache
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            plugin/naive/src/main/jniLibs/${{ matrix.arch }}
+          key: naive-${{ matrix.arch }}-${{ hashFiles('bin/plugin/naive/*', 'naive_status') }}
+      - name: Native Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          ./run init action naive
+          ./run plugin naive init
+          ./run plugin naive ${{ matrix.arch }}
+      - name: Calculate SHA256
+        run: |
+          openssl sha256 plugin/naive/src/main/jniLibs/${{ matrix.arch }}/libnaive.so > sha256sum.txt
+          echo "SHA256SUM=$(cut -d' ' -f2 sha256sum.txt)" >>$GITHUB_ENV
+      - uses: actions/upload-artifact@v3
+        with:
+          name: "NAIVE-SHA256-${{ matrix.arch }} ${{ env.SHA256SUM }}"
+          path: sha256sum.txt
+  #  pingtunnel:
+  #    name: Native Build (PingTunnel)
+  #    runs-on: ubuntu-latest
+  #    needs:
+  #      - setup
+  #    steps:
+  #      - name: Checkout
+  #        uses: actions/checkout@v3
+  #      - name: Fetch Status
+  #        run: git submodule status 'plugin/pingtunnel/*' > pt_status
+  #      - name: PingTunnel Cache
+  #        id: cache
+  #        uses: actions/cache@v3
+  #        with:
+  #          path: |
+  #            plugin/pingtunnel/src/main/jniLibs
+  #          key: ${{ hashFiles('.github/workflows/*', 'bin/lib/pingtunnel/*', 'pt_status') }}
+  #      - name: Install Golang
+  #        uses: actions/setup-go@v3
+  #        if: steps.cache.outputs.cache-hit != 'true'
+  #        with:
+  #          go-version: 1.16
+  #      - name: Native Build
+  #        if: steps.cache.outputs.cache-hit != 'true'
+  #        run: ./run plugin pingtunnel
+  relaybaton:
+    name: Native Build (RelayBaton)
+    runs-on: ubuntu-latest
+    needs:
+      - setup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Fetch Status
+        run: git submodule status 'plugin/relaybaton/*' > rb_status
+      - name: RelayBaton Cache
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            plugin/relaybaton/src/main/jniLibs
+          key: ${{ hashFiles('.github/workflows/*', 'bin/lib/relaybaton/*', 'rb_status') }}
+      - name: Install Golang
+        uses: actions/setup-go@v3
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          go-version: 1.18.10
+      - name: Native Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: ./run plugin relaybaton
+  brook:
+    name: Native Build (Brook)
+    runs-on: ubuntu-latest
+    needs:
+      - setup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Fetch Status
+        run: git submodule status 'plugin/brook/*' > brook_status
+      - name: Brook Cache
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            plugin/brook/src/main/jniLibs
+          key: ${{ hashFiles('.github/workflows/*', 'bin/lib/brook/*', 'brook_status') }}
+      - name: Install Golang
+        uses: actions/setup-go@v3
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          go-version: 1.18.0
+      - name: Native Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: ./run plugin brook
+  hysteria:
+    name: Native Build (Hysteria)
+    runs-on: ubuntu-latest
+    needs:
+      - setup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Fetch Status
+        run: git submodule status 'plugin/hysteria/*' > hysteria_status
+      - name: Hysteria Cache
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            plugin/hysteria/src/main/jniLibs
+          key: ${{ hashFiles('.github/workflows/*', 'bin/lib/hysteria/*', 'hysteria_status') }}
+      - name: Install Golang
+        uses: actions/setup-go@v3
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          go-version: 1.20.5
+      - name: Native Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: ./run plugin hysteria
+  mieru:
+    name: Native Build (Mieru)
+    runs-on: ubuntu-latest
+    needs:
+      - setup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Fetch Status
+        run: git submodule status 'plugin/mieru/*' > mieru_status
+      - name: Mieru Cache
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            plugin/mieru/src/main/jniLibs
+          key: ${{ hashFiles('.github/workflows/*', 'bin/lib/mieru/*', 'mieru_status') }}
+      - name: Install Golang
+        uses: actions/setup-go@v3
+        if: steps.cache.outputs.cache-hit != 'true'
+        with:
+          go-version: 1.20.7
+      - name: Native Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: ./run plugin mieru
+  tuic:
+    name: Native Build (TUIC)
+    runs-on: ubuntu-latest
+    needs:
+      - setup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Fetch Status
+        run: git submodule status 'plugin/tuic/*' > tuic_status
+      - name: Tuic Cache
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            plugin/tuic/src/main/jniLibs
+          key: ${{ hashFiles('.github/workflows/*', 'bin/lib/tuic/*', 'tuic_status') }}
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable
+          rustup override set stable
+        if: steps.cache.outputs.cache-hit != 'true'
+      - name: Install rust android target
+        run: ./run init action rust
+        if: steps.cache.outputs.cache-hit != 'true'
+      - name: Native Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: ./run plugin tuic
+  lint:
+    name: Android Lint
+    runs-on: ubuntu-latest
+    needs:
+      - libcore
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
       - name: Fetch Status
         run: |
-          git submodule status 'core/*' > core_status
-          git submodule status 'shadowsocks/*' > shadowsocks_status
-          git submodule status 'shadowsocksr/*' > shadowsocksr_status
-          git submodule status v2ray > v2ray_status
-      - name: Core Cache
-        uses: actions/cache@v2
+          git submodule status library/core > libcore_status
+      - name: LibCore Cache
+        uses: actions/cache@v3
         with:
           path: |
-            app/libs/core-release.aar
-          key: ${{ hashFiles('core_status') }}
-      - name: V2Ray Cache
-        uses: actions/cache@v2
-        with:
-          path: |
-            app/libs/libv2ray.aar
-          key: ${{ hashFiles('bin/libs/v2ray/*', 'v2ray_status') }}
-      - name: Shadowsocks Cache
-        uses: actions/cache@v2
-        with:
-          path: |
-            app/libs/shadowsocks-release.aar
-          key: ${{ hashFiles('shadowsocks/build.gradle.kts', 'shadowsocks_status') }}
-      - name: ShadowsocksR Cache
-        uses: actions/cache@v2
-        with:
-          path: |
-            app/libs/shadowsocksr-release.aar
-          key: ${{ hashFiles('shadowsocksr_status') }}
+            app/libs/libcore.aar
+          key: ${{ hashFiles('.github/workflows/*', 'bin/lib/core/*', 'libcore_status') }}
       - name: Gradle cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.gradle
-          key: gradle-${{ hashFiles('**/*.gradle') }}
-      - name: Debug Build
+          key: gradle-${{ hashFiles('**/*.gradle.kts') }}
+      - name: Android Lint
+        env:
+          BUILD_PLUGIN: none
         run: |
           echo "sdk.dir=${ANDROID_HOME}" > local.properties
-          echo "ndk.dir=${ANDROID_HOME}/ndk/21.4.7075529" >> local.properties
-          ./run update_assets
-          ./gradlew app:assembleOssDebug
+          echo "ndk.dir=${ANDROID_HOME}/ndk/25.0.8775105" >> local.properties
+          ./run init action library
+          ./run lint

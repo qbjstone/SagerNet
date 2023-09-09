@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -20,6 +18,8 @@
  ******************************************************************************/
 
 package io.nekohasekai.sagernet.fmt.trojan_go;
+
+import androidx.annotation.NonNull;
 
 import com.esotericsoftware.kryo.io.ByteBufferInput;
 import com.esotericsoftware.kryo.io.ByteBufferOutput;
@@ -103,9 +103,13 @@ public class TrojanGoBean extends AbstractBean {
      */
     public String plugin;
 
+    // ---
+
+    public Boolean allowInsecure;
+
     @Override
-    public void initDefaultValues() {
-        super.initDefaultValues();
+    public void initializeDefaultValues() {
+        super.initializeDefaultValues();
 
         if (password == null) password = "";
         if (sni == null) sni = "";
@@ -114,11 +118,12 @@ public class TrojanGoBean extends AbstractBean {
         if (path == null) path = "";
         if (StrUtil.isBlank(encryption)) encryption = "none";
         if (plugin == null) plugin = "";
+        if (allowInsecure == null) allowInsecure = false;
     }
 
     @Override
     public void serialize(ByteBufferOutput output) {
-        output.writeInt(0);
+        output.writeInt(1);
         super.serialize(output);
         output.writeString(password);
         output.writeString(sni);
@@ -133,6 +138,7 @@ public class TrojanGoBean extends AbstractBean {
         }
         output.writeString(encryption);
         output.writeString(plugin);
+        output.writeBoolean(allowInsecure);
     }
 
     @Override
@@ -153,13 +159,36 @@ public class TrojanGoBean extends AbstractBean {
         }
         encryption = input.readString();
         plugin = input.readString();
+        if (version >= 1) {
+            allowInsecure = input.readBoolean();
+        }
+    }
 
-        initDefaultValues();
+    @Override
+    public void applyFeatureSettings(AbstractBean other) {
+        if (!(other instanceof TrojanGoBean)) return;
+        TrojanGoBean bean = ((TrojanGoBean) other);
+        if (allowInsecure) {
+            bean.allowInsecure = true;
+        }
     }
 
     @NotNull
     @Override
-    public AbstractBean clone() {
+    public TrojanGoBean clone() {
         return KryoConverters.deserialize(new TrojanGoBean(), KryoConverters.serialize(this));
     }
+
+    public static final Creator<TrojanGoBean> CREATOR = new CREATOR<TrojanGoBean>() {
+        @NonNull
+        @Override
+        public TrojanGoBean newInstance() {
+            return new TrojanGoBean();
+        }
+
+        @Override
+        public TrojanGoBean[] newArray(int size) {
+            return new TrojanGoBean[size];
+        }
+    };
 }

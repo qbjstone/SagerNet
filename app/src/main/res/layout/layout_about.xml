@@ -20,11 +20,14 @@
             android:orientation="vertical">
 
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/title_card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginLeft="8dp"
                 android:layout_marginTop="8dp"
                 android:layout_marginRight="8dp"
+                android:clickable="true"
+                android:focusable="true"
                 app:cardElevation="2dp">
 
                 <LinearLayout
@@ -52,7 +55,7 @@
             </com.google.android.material.card.MaterialCardView>
 
             <androidx.coordinatorlayout.widget.CoordinatorLayout
-                android:id="@+id/fragment_holder"
+                android:id="@+id/about_fragment_holder"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:fitsSystemWindows="true" />
@@ -62,6 +65,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginLeft="8dp"
                 android:layout_marginRight="8dp"
+                android:layout_marginBottom="8dp"
                 app:cardElevation="2dp">
 
                 <LinearLayout
@@ -82,8 +86,9 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="16dp"
                         android:textAppearance="?attr/textAppearanceBody2"
-                        android:textSize="12sp"
-                        android:textColor="?android:textColorSecondary" />
+                        android:textColor="?android:textColorSecondary"
+                        android:textIsSelectable="true"
+                        android:textSize="12sp" />
 
                 </LinearLayout>
 

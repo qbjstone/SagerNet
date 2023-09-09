@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -22,12 +20,22 @@
 package io.nekohasekai.sagernet.ktx
 
 import androidx.preference.PreferenceDataStore
+import cn.hutool.core.util.NumberUtil
 import kotlin.reflect.KProperty
 
 fun PreferenceDataStore.string(
     name: String,
     defaultValue: () -> String = { "" },
 ) = PreferenceProxy(name, defaultValue, ::getString, ::putString)
+
+fun PreferenceDataStore.stringNotBlack(
+    name: String,
+    defaultValue: () -> String = { "" },
+) = PreferenceProxy(name, defaultValue, { key, default ->
+    getString(key, default)?.takeIf { it.isNotBlank() } ?: default
+}, { key, value ->
+    putString(key, value.takeIf { it.isNotBlank() } ?: defaultValue())
+})
 
 fun PreferenceDataStore.boolean(
     name: String,
@@ -42,15 +50,28 @@ fun PreferenceDataStore.int(
 fun PreferenceDataStore.stringToInt(
     name: String,
     defaultValue: () -> Int = { 0 },
-) = PreferenceProxy(name,
-    defaultValue,
-    { key, default -> getString(key, "$default")?.toInt() },
-    { key, value -> putString(key, "$value") })
+) = PreferenceProxy(name, defaultValue, { key, default ->
+    getString(key, "$default")?.takeIf { NumberUtil.isInteger(it) }?.toInt() ?: default
+}, { key, value -> putString(key, "$value") })
+
+fun PreferenceDataStore.stringToIntIfExists(
+    name: String,
+    defaultValue: () -> Int = { 0 },
+) = PreferenceProxy(name, defaultValue, { key, default ->
+    getString(key, "$default")?.takeIf { NumberUtil.isInteger(it) }?.toInt() ?: default
+}, { key, value -> putString(key, value.takeIf { it > 0 }?.toString() ?: "") })
 
 fun PreferenceDataStore.long(
     name: String,
     defaultValue: () -> Long = { 0L },
 ) = PreferenceProxy(name, defaultValue, ::getLong, ::putLong)
+
+fun PreferenceDataStore.stringToLong(
+    name: String,
+    defaultValue: () -> Long = { 0L },
+) = PreferenceProxy(name, defaultValue, { key, default ->
+    getString(key, "$default")?.takeIf { NumberUtil.isLong(it) }?.toLong() ?: default
+}, { key, value -> putString(key, "$value") })
 
 class PreferenceProxy<T>(
     val name: String,

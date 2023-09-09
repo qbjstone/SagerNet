@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -27,21 +27,30 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import io.nekohasekai.sagernet.bg.SubscriptionUpdater
 import io.nekohasekai.sagernet.database.DataStore
+import io.nekohasekai.sagernet.ktx.Logs
 import io.nekohasekai.sagernet.ktx.app
+import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
 
 class BootReceiver : BroadcastReceiver() {
     companion object {
         private val componentName by lazy { ComponentName(app, BootReceiver::class.java) }
         var enabled: Boolean
-            get() = app.packageManager.getComponentEnabledSetting(componentName) ==
-                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-            set(value) = app.packageManager.setComponentEnabledSetting(componentName,
-                if (value) PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                else PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+            get() = app.packageManager.getComponentEnabledSetting(componentName) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            set(value) = app.packageManager.setComponentEnabledSetting(
+                componentName, if (value) PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                else PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP
+            )
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Intent.ACTION_LOCKED_BOOT_COMPLETED) runOnDefaultDispatcher {
+            runCatching {
+                SubscriptionUpdater.reconfigureUpdater()
+            }
+        }
+
         if (!DataStore.persistAcrossReboot) {   // sanity check
             enabled = false
             return
@@ -49,8 +58,8 @@ class BootReceiver : BroadcastReceiver() {
 
         val doStart = when (intent.action) {
             Intent.ACTION_LOCKED_BOOT_COMPLETED -> DataStore.directBootAware
-            else -> Build.VERSION.SDK_INT >= 24 && SagerNet.user.isUserUnlocked
-        } && DataStore.startedProxy > 0
+            else -> Build.VERSION.SDK_INT < 24 || SagerNet.user.isUserUnlocked
+        } && DataStore.currentProfile > 0
 
         if (doStart) SagerNet.startService()
     }

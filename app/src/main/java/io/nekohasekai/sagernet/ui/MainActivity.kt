@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -21,101 +21,372 @@
 
 package io.nekohasekai.sagernet.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.RemoteException
-import androidx.coordinatorlayout.widget.CoordinatorLayout
+import android.provider.Settings
+import android.view.KeyEvent
+import android.view.MenuItem
+import android.widget.Toast
+import androidx.annotation.IdRes
 import androidx.core.view.ViewCompat
-import androidx.drawerlayout.widget.DrawerLayout
-import androidx.navigation.NavController
-import androidx.navigation.findNavController
-import androidx.navigation.ui.AppBarConfiguration
-import androidx.navigation.ui.navigateUp
-import androidx.navigation.ui.setupWithNavController
 import androidx.preference.PreferenceDataStore
+import cn.hutool.core.codec.Base64Decoder
+import cn.hutool.core.util.ZipUtil
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.navigation.NavigationView
 import com.google.android.material.snackbar.Snackbar
-import io.nekohasekai.sagernet.Key
-import io.nekohasekai.sagernet.R
-import io.nekohasekai.sagernet.SagerNet
-import io.nekohasekai.sagernet.aidl.IShadowsocksService
+import io.nekohasekai.sagernet.*
+import io.nekohasekai.sagernet.aidl.AppStats
+import io.nekohasekai.sagernet.aidl.ISagerNetService
 import io.nekohasekai.sagernet.aidl.TrafficStats
 import io.nekohasekai.sagernet.bg.BaseService
 import io.nekohasekai.sagernet.bg.SagerConnection
-import io.nekohasekai.sagernet.database.DataStore
-import io.nekohasekai.sagernet.database.ProfileManager
+import io.nekohasekai.sagernet.database.*
 import io.nekohasekai.sagernet.database.preference.OnPreferenceDataStoreChangeListener
-import io.nekohasekai.sagernet.ktx.runOnDefaultDispatcher
+import io.nekohasekai.sagernet.databinding.LayoutMainBinding
+import io.nekohasekai.sagernet.fmt.AbstractBean
+import io.nekohasekai.sagernet.fmt.Alerts
+import io.nekohasekai.sagernet.fmt.KryoConverters
+import io.nekohasekai.sagernet.fmt.PluginEntry
+import io.nekohasekai.sagernet.group.GroupInterfaceAdapter
+import io.nekohasekai.sagernet.group.GroupUpdater
+import io.nekohasekai.sagernet.ktx.*
+import io.nekohasekai.sagernet.plugin.PluginManager
 import io.nekohasekai.sagernet.widget.ListHolderListener
-import io.nekohasekai.sagernet.widget.ServiceButton
-import io.nekohasekai.sagernet.widget.StatsBar
+import io.noties.markwon.Markwon
+import com.github.shadowsocks.plugin.PluginManager as ShadowsocksPluginPluginManager
 
-class MainActivity : ThemedActivity(), SagerConnection.Callback,
-    OnPreferenceDataStoreChangeListener {
+class MainActivity : ThemedActivity(),
+    SagerConnection.Callback,
+    OnPreferenceDataStoreChangeListener,
+    NavigationView.OnNavigationItemSelectedListener {
 
-    private lateinit var appBarConfiguration: AppBarConfiguration
-    lateinit var fab: ServiceButton
-    lateinit var stats: StatsBar
-    lateinit var drawer: DrawerLayout
-    lateinit var coordinator: CoordinatorLayout
-    lateinit var navView: NavigationView
-    lateinit var navController: NavController
+    lateinit var binding: LayoutMainBinding
+    lateinit var navigation: NavigationView
+
+    val userInterface by lazy { GroupInterfaceAdapter(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        setContentView(R.layout.layout_main)
+        binding = LayoutMainBinding.inflate(layoutInflater)
+        binding.fab.initProgress(binding.fabProgress)
+        if (themeResId !in intArrayOf(
+                R.style.Theme_SagerNet_Black, R.style.Theme_SagerNet_LightBlack
+            )
+        ) {
+            navigation = binding.navView
+            binding.drawerLayout.removeView(binding.navViewBlack)
+        } else {
+            navigation = binding.navViewBlack
+            binding.drawerLayout.removeView(binding.navView)
+        }
+        navigation.setNavigationItemSelectedListener(this)
 
-        coordinator = findViewById(R.id.coordinator)
+        if (savedInstanceState == null) {
+            displayFragmentWithId(R.id.nav_configuration)
+        }
 
-        fab = findViewById(R.id.fab)
-        stats = findViewById(R.id.stats)
-        drawer = findViewById(R.id.drawer_layout)
+        binding.fab.setOnClickListener {
+            if (state.canStop) SagerNet.stopService() else connect.launch(
+                null
+            )
+        }
+        binding.stats.setOnClickListener { if (state == BaseService.State.Connected) binding.stats.testConnection() }
 
-        navView = findViewById(R.id.nav_view)
-        navController = findNavController(R.id.nav_host_fragment)
-
-        fab.setOnClickListener { if (state.canStop) SagerNet.stopService() else connect.launch(null) }
-        stats.setOnClickListener { if (state == BaseService.State.Connected) stats.testConnection() }
-
-        ViewCompat.setOnApplyWindowInsetsListener(coordinator, ListHolderListener)
-
-        appBarConfiguration = AppBarConfiguration(
-            setOf(
-                R.id.nav_configuration, R.id.nav_group, R.id.nav_settings, R.id.nav_about
-            ), drawer
-        )
-
-        navView.setupWithNavController(navController)
-
-        /* ViewCompat.setOnApplyWindowInsetsListener(fab) { view, insets ->
-             view.updateLayoutParams<ViewGroup.MarginLayoutParams> {
-                 bottomMargin = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom +
-                         resources.getDimensionPixelOffset(R.dimen.mtrl_bottomappbar_fab_bottom_margin)
-             }
-             insets
-         }*/
-
+        setContentView(binding.root)
+        ViewCompat.setOnApplyWindowInsetsListener(binding.coordinator, ListHolderListener)
         changeState(BaseService.State.Idle)
         connection.connect(this, this)
         DataStore.configurationStore.registerChangeListener(this)
+
+        if (intent?.action == Intent.ACTION_VIEW) {
+            onNewIntent(intent)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+
+        val uri = intent.data ?: return
+
+        runOnDefaultDispatcher {
+            if (uri.scheme == "sn" && uri.host == "subscription" || uri.scheme == "clash") {
+                importSubscription(uri)
+            } else {
+                importProfile(uri)
+            }
+        }
+    }
+
+    fun urlTest(): Int {
+        if (state != BaseService.State.Connected || connection.service == null) {
+            error("not started")
+        }
+        return connection.service!!.urlTest()
+    }
+
+    suspend fun importSubscription(uri: Uri) {
+        val group: ProxyGroup
+
+        val url = uri.getQueryParameter("url")
+        if (!url.isNullOrBlank()) {
+            group = ProxyGroup(type = GroupType.SUBSCRIPTION)
+            val subscription = SubscriptionBean()
+            group.subscription = subscription
+
+            // cleartext format
+            subscription.link = url
+            group.name = uri.getQueryParameter("name")
+
+            val type = uri.getQueryParameter("type")
+            when (type?.lowercase()) {
+                "sip008" -> {
+                    subscription.type = SubscriptionType.SIP008
+                }
+            }
+
+        } else {
+            val data = uri.encodedQuery.takeIf { !it.isNullOrBlank() } ?: return
+            try {
+                group = KryoConverters.deserialize(
+                    ProxyGroup().apply { export = true }, ZipUtil.unZlib(Base64Decoder.decode(data))
+                ).apply {
+                    export = false
+                }
+            } catch (e: Exception) {
+                onMainDispatcher {
+                    alert(e.readableMessage).show()
+                }
+                return
+            }
+        }
+
+        val name = group.name.takeIf { !it.isNullOrBlank() } ?: group.subscription?.link
+        ?: group.subscription?.token
+        if (name.isNullOrBlank()) return
+
+        group.name = group.name.takeIf { !it.isNullOrBlank() }
+            ?: "Subscription #" + System.currentTimeMillis()
+
+        onMainDispatcher {
+
+            displayFragmentWithId(R.id.nav_group)
+
+            MaterialAlertDialogBuilder(this@MainActivity).setTitle(R.string.subscription_import)
+                .setMessage(getString(R.string.subscription_import_message, name))
+                .setPositiveButton(R.string.yes) { _, _ ->
+                    runOnDefaultDispatcher {
+                        finishImportSubscription(group)
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+
+        }
+
+    }
+
+    private suspend fun finishImportSubscription(subscription: ProxyGroup) {
+        GroupManager.createGroup(subscription)
+        GroupUpdater.startUpdate(subscription, true)
+    }
+
+    suspend fun importProfile(uri: Uri) {
+        val profile = try {
+            parseProxies(uri.toString()).getOrNull(0) ?: error(getString(R.string.no_proxies_found))
+        } catch (e: Exception) {
+            onMainDispatcher {
+                alert(e.readableMessage).show()
+            }
+            return
+        }
+
+        onMainDispatcher {
+            MaterialAlertDialogBuilder(this@MainActivity).setTitle(R.string.profile_import)
+                .setMessage(getString(R.string.profile_import_message, profile.displayName()))
+                .setPositiveButton(R.string.yes) { _, _ ->
+                    runOnDefaultDispatcher {
+                        finishImportProfile(profile)
+                    }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
+    }
+
+    private suspend fun finishImportProfile(profile: AbstractBean) {
+        val targetId = DataStore.selectedGroupForImport()
+
+        ProfileManager.createProfile(targetId, profile)
+
+        onMainDispatcher {
+            displayFragmentWithId(R.id.nav_configuration)
+
+            snackbar(resources.getQuantityString(R.plurals.added, 1, 1)).show()
+        }
+    }
+
+    override fun missingPlugin(profileName: String, pluginName: String) {
+        val pluginId = if (pluginName.startsWith("shadowsocks-")) pluginName.substringAfter("shadowsocks-") else pluginName
+        val pluginEntity = PluginEntry.find(pluginName)
+        if (pluginEntity == null) {
+            snackbar(getString(R.string.plugin_unknown, pluginName)).show()
+            return
+        }
+
+        val existsButOnShitSystem = if (pluginName == pluginId) {
+            PluginManager.fetchPlugins().map { it.id }.contains(pluginName)
+        } else {
+            ShadowsocksPluginPluginManager.fetchPlugins(true).map { it.id }.contains(pluginId)
+        }
+
+        if (existsButOnShitSystem) {
+            MaterialAlertDialogBuilder(this).setTitle(R.string.missing_plugin).setMessage(
+                getString(
+                    R.string.plugin_exists_but_on_shit_system,
+                    profileName,
+                    getString(pluginEntity.nameId)
+                )
+            ).setPositiveButton(R.string.action_learn_more) { _, _ ->
+                launchCustomTab("https://sagernet.org/plugin/")
+            }.show()
+            return
+        }
+
+        MaterialAlertDialogBuilder(this).setTitle(R.string.missing_plugin)
+            .setMessage(
+                getString(
+                    R.string.profile_requiring_plugin, profileName, getString(pluginEntity.nameId)
+                )
+            )
+            .setPositiveButton(R.string.action_download) { _, _ ->
+                showDownloadDialog(pluginEntity)
+            }
+            .setNeutralButton(android.R.string.cancel, null)
+            .setNeutralButton(R.string.action_learn_more) { _, _ ->
+                launchCustomTab("https://sagernet.org/plugin/")
+            }
+            .show()
+    }
+
+    private fun showDownloadDialog(pluginEntry: PluginEntry) {
+        var index = 0
+        var playIndex = -1
+        var fdroidIndex = -1
+        var downloadIndex = -1
+
+        val items = mutableListOf<String>()
+        if (pluginEntry.downloadSource.playStore) {
+            items.add(getString(R.string.install_from_play_store))
+            playIndex = index++
+        }
+        if (pluginEntry.downloadSource.fdroid) {
+            items.add(getString(R.string.install_from_fdroid))
+            fdroidIndex = index++
+        }
+
+        items.add(getString(R.string.download))
+        downloadIndex = index
+
+        MaterialAlertDialogBuilder(this).setTitle(pluginEntry.name)
+            .setItems(items.toTypedArray()) { _, which ->
+                when (which) {
+                    playIndex -> launchCustomTab("https://play.google.com/store/apps/details?id=${pluginEntry.packageName}")
+                    fdroidIndex -> launchCustomTab("https://f-droid.org/packages/${pluginEntry.packageName}/")
+                    downloadIndex -> launchCustomTab(pluginEntry.downloadSource.downloadLink)
+                }
+            }
+            .show()
+    }
+
+    override fun onNavigationItemSelected(item: MenuItem): Boolean {
+        if (item.isChecked) binding.drawerLayout.closeDrawers() else {
+            return displayFragmentWithId(item.itemId)
+        }
+        return true
+    }
+
+
+    fun displayFragment(fragment: ToolbarFragment) {
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.fragment_holder, fragment)
+            .commitAllowingStateLoss()
+        binding.drawerLayout.closeDrawers()
+    }
+
+    fun displayFragmentWithId(@IdRes id: Int): Boolean {
+        when (id) {
+            R.id.nav_configuration -> {
+                displayFragment(ConfigurationFragment())
+                connection.bandwidthTimeout = connection.bandwidthTimeout
+            }
+            R.id.nav_group -> displayFragment(GroupFragment())
+            R.id.nav_route -> displayFragment(RouteFragment())
+            R.id.nav_settings -> displayFragment(SettingsFragment())
+            R.id.nav_traffic -> {
+                displayFragment(TrafficFragment())
+                connection.trafficTimeout = connection.trafficTimeout
+            }
+            R.id.nav_tools -> displayFragment(ToolsFragment())
+            R.id.nav_logcat -> displayFragment(LogcatFragment())
+            R.id.nav_faq -> {
+                launchCustomTab("https://sagernet.org/")
+                return false
+            }
+            R.id.nav_about -> displayFragment(AboutFragment())
+            else -> return false
+        }
+        navigation.menu.findItem(id).isChecked = true
+        return true
+    }
+
+    fun ruleCreated() {
+        navigation.menu.findItem(R.id.nav_route).isChecked = true
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.fragment_holder, RouteFragment())
+            .commitAllowingStateLoss()
+        if (SagerNet.started) {
+            snackbar(getString(R.string.restart)).setAction(R.string.apply) {
+                SagerNet.reloadService()
+            }.show()
+        }
     }
 
     var state = BaseService.State.Idle
+    var doStop = false
 
     private fun changeState(
         state: BaseService.State,
         msg: String? = null,
         animate: Boolean = false,
     ) {
-        fab.changeState(state, this.state, animate)
-        stats.changeState(state)
+        val started = state == BaseService.State.Connected
+
+        if (!started) {
+            statsUpdated(emptyList())
+        }
+
+        binding.fab.changeState(state, this.state, animate)
+        binding.stats.changeState(state)
         if (msg != null) snackbar(getString(R.string.vpn_error, msg)).show()
         this.state = state
+
+        when (state) {
+            BaseService.State.Connected, BaseService.State.Stopped -> {
+                statsUpdated(emptyList())
+            }
+        }
     }
 
-    fun snackbar(text: CharSequence = ""): Snackbar {
-        return Snackbar.make(coordinator, text, Snackbar.LENGTH_LONG).apply {
-            anchorView = fab
+    override fun snackbarInternal(text: CharSequence): Snackbar {
+        return Snackbar.make(binding.coordinator, text, Snackbar.LENGTH_LONG).apply {
+            if (binding.fab.isShown) {
+                anchorView = binding.fab
+            }
         }
     }
 
@@ -123,14 +394,63 @@ class MainActivity : ThemedActivity(), SagerConnection.Callback,
         changeState(state, msg, true)
     }
 
-    val connection = SagerConnection(true)
-    override fun onServiceConnected(service: IShadowsocksService) = changeState(
-        try {
-            BaseService.State.values()[service.state]
-        } catch (_: RemoteException) {
-            BaseService.State.Idle
+    override fun statsUpdated(stats: List<AppStats>) {
+        (supportFragmentManager.findFragmentById(R.id.fragment_holder) as? TrafficFragment)?.emitStats(
+            stats
+        )
+    }
+
+    override fun routeAlert(type: Int, routeName: String) {
+        val markwon = Markwon.create(this)
+        when (type) {
+            Alerts.ROUTE_ALERT_NOT_VPN -> {
+                val message = markwon.toMarkdown(getString(R.string.route_need_vpn, routeName))
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            }
+            Alerts.ROUTE_ALERT_NEED_BACKGROUND_LOCATION_ACCESS -> {
+                val message = markwon.toMarkdown(getString(R.string.route_need_ssid, routeName))
+                MaterialAlertDialogBuilder(this).setTitle(R.string.missing_permission)
+                    .setMessage(message)
+                    .setNeutralButton(R.string.open_settings) { _, _ ->
+                        try {
+                            startActivity(Intent().apply {
+                                action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+                                data = Uri.fromParts(
+                                    "package", packageName, null
+                                )
+                            })
+                        } catch (e: Exception) {
+                            snackbar(e.readableMessage).show()
+                        }
+                    }
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
+            Alerts.ROUTE_ALERT_LOCATION_DISABLED -> {
+                val message = markwon.toMarkdown(getString(R.string.route_need_ssid, routeName))
+                MaterialAlertDialogBuilder(this).setTitle(R.string.location_disabled)
+                    .setMessage(message)
+                    .setNeutralButton(R.string.open_settings) { _, _ ->
+                        try {
+                            startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                        } catch (e: Exception) {
+                            snackbar(e.readableMessage).show()
+                        }
+                    }
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
         }
-    )
+    }
+
+    val connection = SagerConnection(true)
+    override fun onServiceConnected(service: ISagerNetService) = changeState(try {
+        BaseService.State.values()[service.state].also {
+            SagerNet.started = it.canStop
+        }
+    } catch (_: RemoteException) {
+        BaseService.State.Idle
+    })
 
     override fun onServiceDisconnected() = changeState(BaseService.State.Idle)
     override fun onBinderDied() {
@@ -139,26 +459,36 @@ class MainActivity : ThemedActivity(), SagerConnection.Callback,
     }
 
     private val connect = registerForActivityResult(VpnRequestActivity.StartService()) {
-        if (it) snackbar().setText(R.string.vpn_permission_denied).show()
+        if (it) snackbar(R.string.vpn_permission_denied).show()
     }
 
-    override fun trafficUpdated(profileId: Long, stats: TrafficStats) {
-        if (profileId != 0L) this@MainActivity.stats.updateTraffic(
+    override fun trafficUpdated(profileId: Long, stats: TrafficStats, isCurrent: Boolean) {
+        if (profileId == 0L) return
+
+        if (isCurrent) binding.stats.updateTraffic(
             stats.txRateProxy, stats.rxRateProxy
         )
+
         runOnDefaultDispatcher {
             ProfileManager.postTrafficUpdated(profileId, stats)
         }
     }
 
-    override fun trafficPersisted(profileId: Long) {
+    override fun profilePersisted(profileId: Long) {
         runOnDefaultDispatcher {
             ProfileManager.postUpdate(profileId)
         }
     }
 
+    override fun observatoryResultsUpdated(groupId: Long) {
+        runOnDefaultDispatcher {
+            GroupManager.postReload(groupId)
+        }
+    }
+
     override fun onPreferenceDataStoreChanged(store: PreferenceDataStore, key: String) {
         when (key) {
+            Key.SERVICE_MODE -> onBinderDied()
             Key.PROXY_APPS, Key.BYPASS_MODE, Key.INDIVIDUAL -> {
                 if (state.canStop) {
                     snackbar(getString(R.string.restart)).setAction(R.string.apply) {
@@ -172,10 +502,12 @@ class MainActivity : ThemedActivity(), SagerConnection.Callback,
     override fun onStart() {
         super.onStart()
         connection.bandwidthTimeout = 1000
+        GroupManager.userInterface = userInterface
     }
 
     override fun onStop() {
         connection.bandwidthTimeout = 0
+        GroupManager.userInterface = null
         super.onStop()
     }
 
@@ -185,9 +517,26 @@ class MainActivity : ThemedActivity(), SagerConnection.Callback,
         connection.disconnect(this)
     }
 
-    override fun onSupportNavigateUp(): Boolean {
-        val navController = findNavController(R.id.nav_host_fragment)
-        return navController.navigateUp(appBarConfiguration) || super.onSupportNavigateUp()
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                if (super.onKeyDown(keyCode, event)) return true
+                binding.drawerLayout.open()
+                navigation.requestFocus()
+            }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (binding.drawerLayout.isOpen) {
+                    binding.drawerLayout.close()
+                    return true
+                }
+            }
+        }
+
+        if (super.onKeyDown(keyCode, event)) return true
+        if (binding.drawerLayout.isOpen) return false
+
+        val fragment = supportFragmentManager.findFragmentById(R.id.fragment_holder) as? ToolbarFragment
+        return fragment != null && fragment.onKeyDown(keyCode, event)
     }
 
 }

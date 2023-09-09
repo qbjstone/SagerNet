@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -19,6 +17,8 @@
  *                                                                            *
  ******************************************************************************/
 
+@file:Suppress("EXPERIMENTAL_API_USAGE")
+
 package io.nekohasekai.sagernet.ktx
 
 import kotlinx.coroutines.*
@@ -30,12 +30,18 @@ fun block(block: suspend CoroutineScope.() -> Unit): suspend CoroutineScope.() -
 fun runOnDefaultDispatcher(block: suspend CoroutineScope.() -> Unit) =
     GlobalScope.launch(Dispatchers.Default, block = block)
 
-suspend fun onDefaultDispatcher(block: suspend CoroutineScope.() -> Unit) =
+suspend fun <T> onDefaultDispatcher(block: suspend CoroutineScope.() -> T) =
     withContext(Dispatchers.Default, block = block)
+
+fun runOnIoDispatcher(block: suspend CoroutineScope.() -> Unit) =
+    GlobalScope.launch(Dispatchers.IO, block = block)
+
+suspend fun <T> onIoDispatcher(block: suspend CoroutineScope.() -> T) =
+    withContext(Dispatchers.IO, block = block)
 
 fun runOnMainDispatcher(block: suspend CoroutineScope.() -> Unit) =
     GlobalScope.launch(Dispatchers.Main.immediate, block = block)
 
-suspend fun onMainDispatcher(block: suspend CoroutineScope.() -> Unit) =
+suspend fun <T> onMainDispatcher(block: suspend CoroutineScope.() -> T) =
     withContext(Dispatchers.Main.immediate, block = block)
 

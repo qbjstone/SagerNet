@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -31,38 +29,32 @@ import android.text.method.LinkMovementMethod
 import android.text.util.Linkify
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.component1
 import androidx.activity.result.component2
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.takisoft.preferencex.PreferenceFragmentCompat
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProfileManager
 import io.nekohasekai.sagernet.database.ProxyEntity
-import io.nekohasekai.sagernet.fmt.chain.ChainBean
+import io.nekohasekai.sagernet.databinding.LayoutAddEntityBinding
+import io.nekohasekai.sagernet.databinding.LayoutProfileBinding
+import io.nekohasekai.sagernet.fmt.internal.ChainBean
 import io.nekohasekai.sagernet.ktx.*
 import io.nekohasekai.sagernet.ui.ProfileSelectActivity
-import java.util.*
 
-class ChainSettingsActivity : ProfileSettingsActivity<ChainBean>(
-    R.layout.layout_chain_settings
-) {
+class ChainSettingsActivity : ProfileSettingsActivity<ChainBean>(R.layout.layout_chain_settings) {
 
     override fun createEntity() = ChainBean()
 
-    override fun init() {
-        ChainBean().apply { initDefaultValues() }.init()
-    }
-
-    val proxyList = LinkedList<ProxyEntity>()
+    val proxyList = ArrayList<ProxyEntity>()
 
     override fun ChainBean.init() {
         DataStore.profileName = name
@@ -72,14 +64,14 @@ class ChainSettingsActivity : ProfileSettingsActivity<ChainBean>(
     override fun ChainBean.serialize() {
         name = DataStore.profileName
         proxies = proxyList.map { it.id }
-        initDefaultValues()
+        initializeDefaultValues()
     }
 
     override fun PreferenceFragmentCompat.createPreferences(
         savedInstanceState: Bundle?,
         rootKey: String?,
     ) {
-        addPreferencesFromResource(R.xml.chain_preferences)
+        addPreferencesFromResource(R.xml.name_preferences)
     }
 
     lateinit var configurationList: RecyclerView
@@ -92,14 +84,14 @@ class ChainSettingsActivity : ProfileSettingsActivity<ChainBean>(
 
         supportActionBar!!.setTitle(R.string.chain_settings)
         configurationList = findViewById(R.id.configuration_list)
-        layoutManager = FixedLinearLayoutManager(this)
+        layoutManager = FixedLinearLayoutManager(configurationList)
         configurationList.layoutManager = layoutManager
         configurationAdapter = ProxiesAdapter()
         configurationList.adapter = configurationAdapter
 
-        ItemTouchHelper(object :
-            ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN,
-                ItemTouchHelper.START) {
+        ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN, ItemTouchHelper.START
+        ) {
             override fun getSwipeDirs(
                 recyclerView: RecyclerView,
                 viewHolder: RecyclerView.ViewHolder,
@@ -120,13 +112,15 @@ class ChainSettingsActivity : ProfileSettingsActivity<ChainBean>(
                 target: RecyclerView.ViewHolder,
             ): Boolean {
                 return if (target !is ProfileHolder) false else {
-                    configurationAdapter.move(viewHolder.adapterPosition, target.adapterPosition)
+                    configurationAdapter.move(
+                        viewHolder.bindingAdapterPosition, target.bindingAdapterPosition
+                    )
                     true
                 }
             }
 
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
-                configurationAdapter.remove(viewHolder.adapterPosition)
+                configurationAdapter.remove(viewHolder.bindingAdapterPosition)
             }
 
         }).attachToRecyclerView(configurationList)
@@ -185,9 +179,9 @@ class ChainSettingsActivity : ProfileSettingsActivity<ChainBean>(
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
             return if (viewType == 0) {
-                AddHolder(layoutInflater.inflate(R.layout.layout_add_entity, parent, false))
+                AddHolder(LayoutAddEntityBinding.inflate(layoutInflater, parent, false))
             } else {
-                ProfileHolder(layoutInflater.inflate(R.layout.layout_profile, parent, false))
+                ProfileHolder(LayoutProfileBinding.inflate(layoutInflater, parent, false))
             }
         }
 
@@ -218,7 +212,7 @@ class ChainSettingsActivity : ProfileSettingsActivity<ChainBean>(
     fun testProfileContains(profile: ProxyEntity, anotherProfile: ProxyEntity): Boolean {
         if (profile.type != 8 || anotherProfile.type != 8) return false
         if (profile.id == anotherProfile.id) return true
-        val proxies = profile.requireChain().proxies
+        val proxies = profile.chainBean!!.proxies
         if (proxies.contains(anotherProfile.id)) return true
         if (proxies.isNotEmpty()) {
             for (entity in ProfileManager.getProfiles(proxies)) {
@@ -230,58 +224,67 @@ class ChainSettingsActivity : ProfileSettingsActivity<ChainBean>(
         return false
     }
 
+    var replacing = 0
 
-    val selectProfileForAdd = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()) { (resultCode, data) ->
-        if (resultCode == Activity.RESULT_OK) runOnDefaultDispatcher {
-            DataStore.dirty = true
+    val selectProfileForAdd =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { (resultCode, data) ->
+            if (resultCode == Activity.RESULT_OK) runOnDefaultDispatcher {
+                DataStore.dirty = true
 
-            val profile =
-                ProfileManager.getProfile(data!!.getLongExtra(ProfileSelectActivity.EXTRA_PROFILE_ID,
-                    0))!!
+                val profile = ProfileManager.getProfile(
+                    data!!.getLongExtra(
+                        ProfileSelectActivity.EXTRA_PROFILE_ID, 0
+                    )
+                )!!
 
-            if (!testProfileAllowed(profile)) {
-                onMainDispatcher {
-                    AlertDialog.Builder(this@ChainSettingsActivity)
-                        .setTitle(R.string.circular_reference)
-                        .setMessage(R.string.circular_reference_sum)
-                        .setPositiveButton(android.R.string.ok, null)
-                        .show()
-                }
-            } else {
-                configurationList.post {
-                    proxyList.add(profile)
-                    configurationAdapter.notifyItemInserted(proxyList.size)
+                if (!testProfileAllowed(profile)) {
+                    onMainDispatcher {
+                        MaterialAlertDialogBuilder(this@ChainSettingsActivity).setTitle(R.string.circular_reference)
+                            .setMessage(R.string.circular_reference_sum)
+                            .setPositiveButton(android.R.string.ok, null).show()
+                    }
+                } else {
+                    configurationList.post {
+                        if (replacing != 0) {
+                            proxyList[replacing - 1] = profile
+                            configurationAdapter.notifyItemChanged(replacing)
+                        } else {
+                            proxyList.add(profile)
+                            configurationAdapter.notifyItemInserted(proxyList.size)
+                        }
+                    }
                 }
             }
         }
-    }
 
-    inner class AddHolder(val view: View) : RecyclerView.ViewHolder(view) {
+    inner class AddHolder(val binding: LayoutAddEntityBinding) :
+        RecyclerView.ViewHolder(binding.root) {
         fun bind() {
-            view.setOnClickListener {
-                selectProfileForAdd.launch(Intent(this@ChainSettingsActivity,
-                    ProfileSelectActivity::class.java))
+            binding.root.setOnClickListener {
+                replacing = 0
+                selectProfileForAdd.launch(
+                    Intent(
+                        this@ChainSettingsActivity, ProfileSelectActivity::class.java
+                    )
+                )
             }
         }
     }
 
-    inner class ProfileHolder(val view: View) : RecyclerView.ViewHolder(view) {
+    inner class ProfileHolder(binding: LayoutProfileBinding) :
+        RecyclerView.ViewHolder(binding.root) {
 
-        val profileName: TextView = view.findViewById(R.id.profile_name)
-        val profileType: TextView = view.findViewById(R.id.profile_type)
-        val profileAddress: TextView = view.findViewById(R.id.profile_address)
-        val trafficText: TextView = view.findViewById(R.id.traffic_text)
-        val selectedView: LinearLayout = view.findViewById(R.id.selected_view)
-        val editButton: ImageView = view.findViewById(R.id.edit)
-        val shareLayout: LinearLayout = view.findViewById(R.id.share)
-        val shareLayer: LinearLayout = view.findViewById(R.id.share_layer)
-        val shareButton: ImageView = view.findViewById(R.id.shareIcon)
+        val profileName = binding.profileName
+        val profileType = binding.profileType
+        val profileAddress = binding.profileAddress
+        val trafficText: TextView = binding.trafficText
+        val selectedView = binding.selectedView
+        val editButton = binding.edit
+        val shareLayout = binding.share
+        val shareLayer = binding.shareLayer
+        val shareButton = binding.shareIcon
 
         fun bind(proxyEntity: ProxyEntity) {
-
-            view.setOnClickListener {
-            }
 
             profileName.text = proxyEntity.displayName()
             profileType.text = proxyEntity.displayType()
@@ -298,20 +301,29 @@ class ChainSettingsActivity : ProfileSettingsActivity<ChainBean>(
             val showTraffic = rx + tx != 0L
             trafficText.isVisible = showTraffic
             if (showTraffic) {
-                trafficText.text = view.context.getString(R.string.traffic,
-                    Formatter.formatFileSize(view.context, tx),
-                    Formatter.formatFileSize(view.context, rx))
+                trafficText.text = itemView.context.getString(
+                    R.string.traffic,
+                    Formatter.formatFileSize(itemView.context, tx),
+                    Formatter.formatFileSize(itemView.context, rx)
+                )
             }
 
-            editButton.isVisible = false
+            editButton.setOnClickListener {
+                replacing = bindingAdapterPosition
+                selectProfileForAdd.launch(Intent(
+                    this@ChainSettingsActivity, ProfileSelectActivity::class.java
+                ).apply {
+                    putExtra(ProfileSelectActivity.EXTRA_SELECTED, proxyEntity)
+                })
+            }
+
             shareLayout.isVisible = false
 
             if (proxyEntity.type != 8) runOnDefaultDispatcher {
 
-                val validateResult =
-                    if (DataStore.securityAdvisory) {
-                        proxyEntity.requireBean().isInsecure()
-                    } else ResultLocal
+                val validateResult = if (DataStore.securityAdvisory) {
+                    proxyEntity.requireBean().isInsecure()
+                } else ResultLocal
 
                 when (validateResult) {
                     is ResultInsecure -> onMainDispatcher {
@@ -322,16 +334,13 @@ class ChainSettingsActivity : ProfileSettingsActivity<ChainBean>(
                         shareButton.setColorFilter(Color.WHITE)
 
                         shareLayout.setOnClickListener {
-                            AlertDialog.Builder(this@ChainSettingsActivity)
-                                .setTitle(R.string.insecure)
+                            MaterialAlertDialogBuilder(this@ChainSettingsActivity).setTitle(R.string.insecure)
                                 .setMessage(resources.openRawResource(validateResult.textRes)
                                     .bufferedReader().use { it.readText() })
-                                .setPositiveButton(android.R.string.ok, null)
-                                .show().apply {
+                                .setPositiveButton(android.R.string.ok, null).show().apply {
                                     findViewById<TextView>(android.R.id.message)?.apply {
                                         Linkify.addLinks(this, Linkify.WEB_URLS)
-                                        movementMethod =
-                                            LinkMovementMethod.getInstance()
+                                        movementMethod = LinkMovementMethod.getInstance()
                                     }
                                 }
                         }
@@ -344,16 +353,13 @@ class ChainSettingsActivity : ProfileSettingsActivity<ChainBean>(
                         shareButton.setColorFilter(Color.GRAY)
 
                         shareLayout.setOnClickListener {
-                            AlertDialog.Builder(this@ChainSettingsActivity)
-                                .setTitle(R.string.deprecated)
+                            MaterialAlertDialogBuilder(this@ChainSettingsActivity).setTitle(R.string.deprecated)
                                 .setMessage(resources.openRawResource(validateResult.textRes)
                                     .bufferedReader().use { it.readText() })
-                                .setPositiveButton(android.R.string.ok, null)
-                                .show().apply {
+                                .setPositiveButton(android.R.string.ok, null).show().apply {
                                     findViewById<TextView>(android.R.id.message)?.apply {
                                         Linkify.addLinks(this, Linkify.WEB_URLS)
-                                        movementMethod =
-                                            LinkMovementMethod.getInstance()
+                                        movementMethod = LinkMovementMethod.getInstance()
                                     }
                                 }
                         }

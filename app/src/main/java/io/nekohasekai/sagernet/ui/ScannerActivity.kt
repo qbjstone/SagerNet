@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -21,9 +19,12 @@
 
 package io.nekohasekai.sagernet.ui
 
+import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.ShortcutManager
 import android.graphics.ImageDecoder
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
@@ -32,53 +33,65 @@ import android.view.Menu
 import android.view.MenuItem
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.getSystemService
 import androidx.core.view.isGone
-import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.snackbar.Snackbar
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
 import com.google.zxing.NotFoundException
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.GlobalHistogramBinarizer
 import com.google.zxing.qrcode.QRCodeReader
-import com.journeyapps.barcodescanner.*
+import com.journeyapps.barcodescanner.BarcodeCallback
+import com.journeyapps.barcodescanner.BarcodeResult
+import com.journeyapps.barcodescanner.CaptureManager
+import com.journeyapps.barcodescanner.MixedDecoder
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.database.DataStore
 import io.nekohasekai.sagernet.database.ProfileManager
+import io.nekohasekai.sagernet.databinding.LayoutScannerBinding
+import io.nekohasekai.sagernet.group.RawUpdater
 import io.nekohasekai.sagernet.ktx.*
 import io.nekohasekai.sagernet.widget.ListHolderListener
 
 
-class ScannerActivity : ThemedActivity(), BarcodeCallback {
+class ScannerActivity : ThemedActivity(),
+    BarcodeCallback {
 
-    lateinit var toolbar: MaterialToolbar
     lateinit var capture: CaptureManager
-    lateinit var barcodeScanner: DecoratedBarcodeView
+    lateinit var binding: LayoutScannerBinding
 
+    @SuppressLint("SourceLockedOrientationActivity")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT != Build.VERSION_CODES.O) {
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
         if (Build.VERSION.SDK_INT >= 25) getSystemService<ShortcutManager>()!!.reportShortcutUsed("scan")
-        setContentView(R.layout.layout_scanner)
+        binding = LayoutScannerBinding.inflate(layoutInflater)
+        setContentView(binding.root)
         ListHolderListener.setup(this)
+        setSupportActionBar(findViewById(R.id.toolbar))
+        supportActionBar?.apply {
+            setDisplayHomeAsUpEnabled(true)
+            setHomeAsUpIndicator(R.drawable.ic_navigation_close)
+        }
 
-        toolbar = findViewById(R.id.toolbar)
-        setSupportActionBar(toolbar)
-        supportActionBar!!.setDisplayHomeAsUpEnabled(true)
-        supportActionBar!!.setHomeAsUpIndicator(R.drawable.ic_navigation_close)
-
-        barcodeScanner = findViewById(R.id.barcode_scanner)
-        barcodeScanner.statusView.isGone = true
-        barcodeScanner.viewFinder.isGone = true
-        barcodeScanner.barcodeView.setDecoderFactory {
+        binding.barcodeScanner.statusView.isGone = true
+        binding.barcodeScanner.viewFinder.isGone = true
+        binding.barcodeScanner.barcodeView.setDecoderFactory {
             MixedDecoder(QRCodeReader())
         }
 
-        capture = CaptureManager(this, barcodeScanner)
-        barcodeScanner.decodeSingle(this)
+        capture = CaptureManager(this, binding.barcodeScanner)
+        binding.barcodeScanner.decodeSingle(this)
     }
 
-    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+    override fun snackbarInternal(text: CharSequence): Snackbar {
+        return Snackbar.make(binding.barcodeScanner, text, Snackbar.LENGTH_LONG)
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.scanner_menu, menu)
         return true
     }
@@ -88,55 +101,68 @@ class ScannerActivity : ThemedActivity(), BarcodeCallback {
             try {
                 it.forEachTry { uri ->
                     val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                        ImageDecoder.decodeBitmap(ImageDecoder.createSource(contentResolver,
-                            uri)) { decoder, _, _ ->
+                        ImageDecoder.decodeBitmap(
+                            ImageDecoder.createSource(
+                                contentResolver, uri
+                            )
+                        ) { decoder, _, _ ->
                             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
                             decoder.isMutableRequired = true
                         }
                     } else {
-                        MediaStore.Images.Media.getBitmap(contentResolver, uri)
+                        @Suppress("DEPRECATION") MediaStore.Images.Media.getBitmap(
+                            contentResolver, uri
+                        )
                     }
                     val intArray = IntArray(bitmap.width * bitmap.height)
-                    bitmap.getPixels(intArray,
-                        0,
-                        bitmap.width,
-                        0,
-                        0, bitmap.width, bitmap.height)
+                    bitmap.getPixels(intArray, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
 
                     val source = RGBLuminanceSource(bitmap.width, bitmap.height, intArray)
                     val qrReader = QRCodeReader()
                     try {
                         val result = try {
-                            qrReader.decode(BinaryBitmap(GlobalHistogramBinarizer(source)),
-                                mapOf(
-                                    DecodeHintType.TRY_HARDER to true
-                                ))
+                            qrReader.decode(
+                                BinaryBitmap(GlobalHistogramBinarizer(source)),
+                                mapOf(DecodeHintType.TRY_HARDER to true)
+                            )
                         } catch (e: NotFoundException) {
-                            qrReader.decode(BinaryBitmap(GlobalHistogramBinarizer(source.invert())),
-                                mapOf(
-                                    DecodeHintType.TRY_HARDER to true
-                                ))
+                            qrReader.decode(
+                                BinaryBitmap(GlobalHistogramBinarizer(source.invert())),
+                                mapOf(DecodeHintType.TRY_HARDER to true)
+                            )
                         }
 
-                        val results = parseProxies(result.text ?: "")
+                        val results = RawUpdater.parseRaw(result.text ?: "")
 
-                        if (results.isNotEmpty()) {
+                        if (!results.isNullOrEmpty()) {
                             onMainDispatcher {
                                 finish()
-                            }
-                            val currentGroupId = DataStore.selectedGroup
-                            for (profile in results) {
-                                ProfileManager.createProfile(currentGroupId, profile)
+                                runOnDefaultDispatcher {
+                                    val currentGroupId = DataStore.selectedGroupForImport()
+                                    if (DataStore.selectedGroup != currentGroupId) {
+                                        DataStore.selectedGroup = currentGroupId
+                                    }
+
+                                    for (profile in results) {
+                                        ProfileManager.createProfile(currentGroupId, profile)
+                                    }
+                                }
                             }
                         } else {
                             Toast.makeText(app, R.string.action_import_err, Toast.LENGTH_SHORT)
-                                .show()
+                                    .show()
                         }
+                    } catch (e: SubscriptionFoundException) {
+                        startActivity(Intent(this@ScannerActivity, MainActivity::class.java).apply {
+                            action = Intent.ACTION_VIEW
+                            data = Uri.parse(e.link)
+                        })
+                        finish()
                     } catch (e: Throwable) {
                         Logs.w(e)
                         onMainDispatcher {
                             Toast.makeText(app, R.string.action_import_err, Toast.LENGTH_SHORT)
-                                .show()
+                                    .show()
                         }
                     }
                 }
@@ -151,11 +177,11 @@ class ScannerActivity : ThemedActivity(), BarcodeCallback {
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == R.id.action_import_file) {
-            importCodeFile.launch("image/*")
-            return true
+        return if (item.itemId == R.id.action_import_file) {
+            startFilesForResult(importCodeFile, "image/*")
+            true
         } else {
-            return super.onOptionsItemSelected(item)
+            super.onOptionsItemSelected(item)
         }
     }
 
@@ -195,23 +221,37 @@ class ScannerActivity : ThemedActivity(), BarcodeCallback {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        return barcodeScanner.onKeyDown(keyCode, event) || super.onKeyDown(keyCode, event)
+        return binding.barcodeScanner.onKeyDown(keyCode, event) || super.onKeyDown(keyCode, event)
     }
 
     override fun barcodeResult(result: BarcodeResult) {
         finish()
         val text = result.result.text
         runOnDefaultDispatcher {
-            val results = parseProxies(text)
-            if (results.isNotEmpty()) {
-                val currentGroupId = DataStore.selectedGroup
+            try {
+                val results = RawUpdater.parseRaw(text)
+                if (!results.isNullOrEmpty()) {
+                    val currentGroupId = DataStore.selectedGroupForImport()
+                    if (DataStore.selectedGroup != currentGroupId) {
+                        DataStore.selectedGroup = currentGroupId
+                    }
 
-                for (profile in results) {
-                    ProfileManager.createProfile(currentGroupId, profile)
+                    for (profile in results) {
+                        ProfileManager.createProfile(currentGroupId, profile)
+                    }
+                } else {
+                    Toast.makeText(app, R.string.action_import_err, Toast.LENGTH_SHORT).show()
                 }
-            } else {
-                Toast.makeText(app, R.string.action_import_err, Toast.LENGTH_SHORT)
-                    .show()
+            } catch (e: SubscriptionFoundException) {
+                startActivity(Intent(this@ScannerActivity, MainActivity::class.java).apply {
+                    action = Intent.ACTION_VIEW
+                    data = Uri.parse(e.link)
+                })
+            } catch (e: Throwable) {
+                Logs.w(e)
+                onMainDispatcher {
+                    Toast.makeText(app, R.string.action_import_err, Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }

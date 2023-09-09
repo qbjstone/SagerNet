@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -26,25 +24,25 @@ package io.nekohasekai.sagernet.ktx
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.annotation.SuppressLint
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
+import android.app.Service
+import android.content.*
 import android.content.pm.PackageInfo
 import android.content.res.Resources
+import android.net.NetworkUtils
 import android.os.Build
-import android.os.Parcelable
+import android.os.SystemClock
 import android.system.Os
 import android.system.OsConstants
 import android.util.TypedValue
 import android.view.View
+import androidx.activity.result.ActivityResultLauncher
 import androidx.annotation.AttrRes
+import androidx.annotation.ColorRes
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
 import androidx.preference.Preference
-import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.LinearSmoothScroller
 import androidx.recyclerview.widget.RecyclerView
 import cn.hutool.core.net.URLDecoder
@@ -53,18 +51,28 @@ import cn.hutool.core.util.CharsetUtil
 import io.nekohasekai.sagernet.BuildConfig
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.SagerNet
-import io.nekohasekai.sagernet.bg.BaseService
 import io.nekohasekai.sagernet.ui.MainActivity
+import io.nekohasekai.sagernet.ui.ThemedActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.parcelize.Parcelize
+import sun.misc.Unsafe
 import java.io.FileDescriptor
 import java.net.HttpURLConnection
 import java.net.InetAddress
+import java.net.Socket
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.reflect.KClass
+import kotlin.reflect.KMutableProperty0
+import kotlin.reflect.KProperty
+import kotlin.reflect.KProperty0
 
 
 inline fun <T> Iterable<T>.forEachTry(action: (T) -> Unit) {
@@ -85,6 +93,10 @@ val Throwable.readableMessage
 /**
  * https://android.googlesource.com/platform/prebuilts/runtime/+/94fec32/appcompat/hiddenapi-light-greylist.txt#9466
  */
+
+private val socketGetFileDescriptor = Socket::class.java.getDeclaredMethod("getFileDescriptor\$")
+val Socket.fileDescriptor get() = socketGetFileDescriptor.invoke(this) as FileDescriptor
+
 private val getInt = FileDescriptor::class.java.getDeclaredMethod("getInt$")
 val FileDescriptor.int get() = getInt.invoke(this) as Int
 
@@ -128,8 +140,7 @@ fun Context.listenForPackageChanges(onetime: Boolean = true, callback: () -> Uni
     }
 
 val PackageInfo.signaturesCompat
-    get() =
-        if (Build.VERSION.SDK_INT >= 28) signingInfo.apkContentsSigners else @Suppress("DEPRECATION") signatures
+    get() = if (Build.VERSION.SDK_INT >= 28) signingInfo.apkContentsSigners else @Suppress("DEPRECATION") signatures
 
 /**
  * Based on: https://stackoverflow.com/a/26348729/2245107
@@ -154,17 +165,12 @@ private val parseNumericAddress by lazy {
     }
 }
 
-fun String?.parseNumericAddress(): InetAddress? = Os.inet_pton(OsConstants.AF_INET, this)
-    ?: Os.inet_pton(OsConstants.AF_INET6, this)?.let {
+fun String?.parseNumericAddress(): InetAddress? =
+    Os.inet_pton(OsConstants.AF_INET, this) ?: Os.inet_pton(OsConstants.AF_INET6, this)?.let {
         if (Build.VERSION.SDK_INT >= 29) it else parseNumericAddress.invoke(
-            null,
-            this
+            null, this
         ) as InetAddress
     }
-
-
-@Parcelize
-class Empty : Parcelable
 
 @JvmOverloads
 fun DialogFragment.showAllowingStateLoss(fragmentManager: FragmentManager, tag: String? = null) {
@@ -235,43 +241,137 @@ fun View.crossFadeFrom(other: View) {
 }
 
 
+fun Fragment.snackbar(textId: Int) = (requireActivity() as MainActivity).snackbar(textId)
 fun Fragment.snackbar(text: CharSequence) = (requireActivity() as MainActivity).snackbar(text)
-fun Fragment.serviceStarted(): Boolean {
-    return ((activity as? MainActivity) ?: return false).state.canStop
+
+fun ThemedActivity.startFilesForResult(
+    launcher: ActivityResultLauncher<String>, input: String
+) {
+    try {
+        return launcher.launch(input)
+    } catch (_: ActivityNotFoundException) {
+    } catch (_: SecurityException) {
+    }
+    snackbar(getString(R.string.file_manager_missing)).show()
+}
+
+fun Fragment.startFilesForResult(
+    launcher: ActivityResultLauncher<String>, input: String
+) {
+    try {
+        return launcher.launch(input)
+    } catch (_: ActivityNotFoundException) {
+    } catch (_: SecurityException) {
+    }
+    (requireActivity() as ThemedActivity).snackbar(getString(R.string.file_manager_missing)).show()
 }
 
 fun Fragment.needReload() {
-    if (serviceStarted()) {
+    if (SagerNet.started) {
         snackbar(getString(R.string.restart)).setAction(R.string.apply) {
             SagerNet.reloadService()
         }.show()
     }
 }
 
-fun Context.loadColor(@AttrRes attr: Int): Int {
+@Suppress("DEPRECATION")
+fun <T : Service> KClass<T>.isRunning(): Boolean {
+    val name = qualifiedName
+    var myServices = SagerNet.activity.getRunningServices(5) ?: return false
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        val myUid = Os.getuid()
+        myServices = myServices.filter { it.uid == myUid }
+    }
+    for (myService in myServices) if (myService.service.className == name) {
+        return true
+    }
+    return false
+}
+
+
+fun Context.getColour(@ColorRes colorRes: Int): Int {
+    return ContextCompat.getColor(this, colorRes)
+}
+
+fun Context.getColorAttr(@AttrRes resId: Int): Int {
     return ContextCompat.getColor(this, TypedValue().also {
-        theme.resolveAttribute(attr, it, true)
+        theme.resolveAttribute(resId, it, true)
     }.resourceId)
 }
 
-fun Fragment.addOverScrollListener(recyclerView: RecyclerView) {
-    if (activity !is MainActivity) return
-    val layoutManager = recyclerView.layoutManager as LinearLayoutManager
-    val adapter = recyclerView.adapter!!
-    recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-        override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-            super.onScrolled(recyclerView, dx, dy)
-            if (dy > 0 && layoutManager.findFirstCompletelyVisibleItemPosition() > 0 && layoutManager.findLastVisibleItemPosition() >= adapter.itemCount - 1) {
-                (activity as MainActivity?)?.fab?.apply {
-                    if (isShown) hide()
-                }
-            } else {
-                (activity as MainActivity?)?.fab?.apply {
-                    if (!isShown) show()
-                }
-            }
-        }
-    })
+const val isDefaultFlavor = BuildConfig.FLAVOR == "oss"
+const val isExpert = BuildConfig.FLAVOR == "expert"
+
+val LAUNCH_DELAY = System.currentTimeMillis() - SystemClock.elapsedRealtime()
+
+private val protectDirectAvailable by lazy {
+    try {
+        NetworkUtils::class.java.getDeclaredMethod("protectFromVpn", Int::class.java)
+        true
+    } catch (e: Exception) {
+        false
+    }
 }
 
-const val isExpert = BuildConfig.FLAVOR == "expert"
+fun Fragment.protectFromVpn(fd: Int) {
+    if (protectDirectAvailable) {
+        NetworkUtils.protectFromVpn(fd)
+    } else {
+        (requireActivity() as? MainActivity)?.connection?.service?.protect(fd)
+    }
+}
+
+fun <T> Continuation<T>.tryResume(value: T) {
+    try {
+        resumeWith(Result.success(value))
+    } catch (ignored: IllegalStateException) {
+    }
+}
+
+fun <T> Continuation<T>.tryResumeWithException(exception: Throwable) {
+    try {
+        resumeWith(Result.failure(exception))
+    } catch (ignored: IllegalStateException) {
+    }
+}
+
+operator fun <F> KProperty0<F>.getValue(thisRef: Any?, property: KProperty<*>): F = get()
+operator fun <F> KMutableProperty0<F>.setValue(
+    thisRef: Any?, property: KProperty<*>, value: F
+) = set(value)
+
+operator fun AtomicBoolean.getValue(thisRef: Any?, property: KProperty<*>): Boolean = get()
+operator fun AtomicBoolean.setValue(thisRef: Any?, property: KProperty<*>, value: Boolean) =
+    set(value)
+
+operator fun AtomicInteger.getValue(thisRef: Any?, property: KProperty<*>): Int = get()
+operator fun AtomicInteger.setValue(thisRef: Any?, property: KProperty<*>, value: Int) = set(value)
+
+operator fun AtomicLong.getValue(thisRef: Any?, property: KProperty<*>): Long = get()
+operator fun AtomicLong.setValue(thisRef: Any?, property: KProperty<*>, value: Long) = set(value)
+
+operator fun <T> AtomicReference<T>.getValue(thisRef: Any?, property: KProperty<*>): T = get()
+operator fun <T> AtomicReference<T>.setValue(thisRef: Any?, property: KProperty<*>, value: T) =
+    set(value)
+
+operator fun <K, V> Map<K, V>.getValue(thisRef: K, property: KProperty<*>) = get(thisRef)
+operator fun <K, V> MutableMap<K, V>.setValue(thisRef: K, property: KProperty<*>, value: V?) {
+
+    if (value != null) {
+
+        put(thisRef, value)
+
+    } else {
+
+        remove(thisRef)
+
+    }
+
+}
+
+@SuppressLint("DiscouragedPrivateApi")
+val UNSAFE = try {
+    Unsafe::class.java.getDeclaredMethod("getUnsafe").invoke(null) as Unsafe?
+} catch (e: Throwable) {
+    null
+}

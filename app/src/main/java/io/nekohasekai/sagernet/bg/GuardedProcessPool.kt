@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -71,7 +71,7 @@ class GuardedProcessPool(private val onFatal: suspend (IOException) -> Unit) : C
                         streamLogger(process.errorStream) { Log.e(cmdName, it) }
                     }
                     thread(name = "stdout-$cmdName") {
-                        streamLogger(process.inputStream) { Log.v(cmdName, it) }
+                        streamLogger(process.inputStream) { Log.i(cmdName, it) }
                         // this thread also acts as a daemon thread for waitFor
                         runBlocking { exitChannel.send(process.waitFor()) }
                     }
@@ -129,6 +129,6 @@ class GuardedProcessPool(private val onFatal: suspend (IOException) -> Unit) : C
     @MainThread
     fun close(scope: CoroutineScope) {
         cancel()
-        coroutineContext[Job]!!.also { job -> scope.launch { job.join() } }
+        coroutineContext[Job]!!.also { job -> scope.launch { job.cancelAndJoin() } }
     }
 }

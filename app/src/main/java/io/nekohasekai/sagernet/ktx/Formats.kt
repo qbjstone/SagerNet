@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -24,15 +22,21 @@ package io.nekohasekai.sagernet.ktx
 import cn.hutool.core.codec.Base64
 import cn.hutool.json.JSONObject
 import io.nekohasekai.sagernet.fmt.AbstractBean
+import io.nekohasekai.sagernet.fmt.Serializable
+import io.nekohasekai.sagernet.fmt.brook.parseBrook
 import io.nekohasekai.sagernet.fmt.gson.gson
 import io.nekohasekai.sagernet.fmt.http.parseHttp
+import io.nekohasekai.sagernet.fmt.hysteria.parseHysteria
+import io.nekohasekai.sagernet.fmt.naive.parseNaive
+import io.nekohasekai.sagernet.fmt.parseUniversal
+import io.nekohasekai.sagernet.fmt.pingtunnel.parsePingTunnel
+import io.nekohasekai.sagernet.fmt.relaybaton.parseRelayBaton
 import io.nekohasekai.sagernet.fmt.shadowsocks.parseShadowsocks
 import io.nekohasekai.sagernet.fmt.shadowsocksr.parseShadowsocksR
 import io.nekohasekai.sagernet.fmt.socks.parseSOCKS
 import io.nekohasekai.sagernet.fmt.trojan.parseTrojan
 import io.nekohasekai.sagernet.fmt.trojan_go.parseTrojanGo
 import io.nekohasekai.sagernet.fmt.v2ray.parseV2Ray
-import java.util.*
 
 fun formatObject(obj: Any): String {
     return gson.toJson(obj).let { JSONObject(it).toStringPretty() }
@@ -40,73 +44,138 @@ fun formatObject(obj: Any): String {
 
 fun String.decodeBase64UrlSafe(): String {
     return Base64.decodeStr(
-        replace(' ', '-')
-            .replace('/', '_')
-            .replace('+', '-')
-            .replace("=", "")
+        replace(' ', '-').replace('/', '_').replace('+', '-').replace("=", "")
     )
 }
 
+class SubscriptionFoundException(val link: String) : RuntimeException()
+
 fun parseProxies(text: String): List<AbstractBean> {
     val links = text.split('\n').flatMap { it.trim().split(' ') }
-    val entities = LinkedList<AbstractBean>()
-    for (link in links) {
-        if (link.startsWith("socks://")) {
-            Logs.d("Try parse socks link: $link")
+    val linksByLine = text.split('\n').map { it.trim() }
+
+    val entities = ArrayList<AbstractBean>()
+    val entitiesByLine = ArrayList<AbstractBean>()
+
+    fun String.parseLink(entities: ArrayList<AbstractBean>) {
+        if (startsWith("clash://install-config?") || startsWith("sn://subscription?")) {
+            throw SubscriptionFoundException(this)
+        }
+
+        if (startsWith("sn://")) {
+            Logs.d("Try parse universal link: $this")
             runCatching {
-                entities.add(parseSOCKS(link))
+                entities.add(parseUniversal(this))
             }.onFailure {
                 Logs.w(it)
             }
-        } else if (link.matches("(http|https|naive\\+https)://.*".toRegex())) {
-            Logs.d("Try parse http link: $link")
+        } else if (startsWith("socks://") || startsWith("socks4://") || startsWith("socks4a://") || startsWith("socks5://")) {
+            Logs.d("Try parse socks link: $this")
             runCatching {
-                entities.add(parseHttp(link))
+                entities.add(parseSOCKS(this))
             }.onFailure {
                 Logs.w(it)
             }
-        } else if (link.startsWith("vmess://") || link.startsWith("vless://")) {
-            Logs.d("Try parse v2ray link: $link")
+        } else if (matches("(http|https)://.*".toRegex())) {
+            Logs.d("Try parse http link: $this")
             runCatching {
-                entities.add(parseV2Ray(link))
+                entities.add(parseHttp(this))
             }.onFailure {
                 Logs.w(it)
             }
-        } else if (link.startsWith("trojan://")) {
-            Logs.d("Try parse trojan link: $link")
+        } else if (startsWith("vmess://") || startsWith("vless://")) {
+            Logs.d("Try parse v2ray link: $this")
             runCatching {
-                entities.add(parseTrojan(link))
+                entities.add(parseV2Ray(this))
             }.onFailure {
                 Logs.w(it)
             }
-        } else if (link.startsWith("trojan-go://")) {
-            Logs.d("Try parse trojan-go link: $link")
+        } else if (startsWith("trojan://")) {
+            Logs.d("Try parse trojan link: $this")
             runCatching {
-                entities.add(parseTrojanGo(link))
+                entities.add(parseTrojan(this))
             }.onFailure {
                 Logs.w(it)
             }
-        } else if (link.startsWith("ss://")) {
-            Logs.d("Try parse shadowsocks link: $link")
+        } else if (startsWith("trojan-go://")) {
+            Logs.d("Try parse trojan-go link: $this")
             runCatching {
-                entities.add(parseShadowsocks(link))
+                entities.add(parseTrojanGo(this))
             }.onFailure {
                 Logs.w(it)
             }
-        } else if (link.startsWith("ssr://")) {
-            Logs.d("Try parse shadowsocksr link: $link")
+        } else if (startsWith("ss://")) {
+            Logs.d("Try parse shadowsocks link: $this")
             runCatching {
-                entities.add(parseShadowsocksR(link))
+                entities.add(parseShadowsocks(this))
+            }.onFailure {
+                Logs.w(it)
+            }
+        } else if (startsWith("ssr://")) {
+            Logs.d("Try parse shadowsocksr link: $this")
+            runCatching {
+                entities.add(parseShadowsocksR(this))
+            }.onFailure {
+                Logs.w(it)
+            }
+        } else if (startsWith("naive+")) {
+            Logs.d("Try parse naive link: $this")
+            runCatching {
+                entities.add(parseNaive(this))
+            }.onFailure {
+                Logs.w(it)
+            }
+        } else if (startsWith("ping-tunnel://")) {
+            Logs.d("Try parse pt link: $this")
+            runCatching {
+                entities.add(parsePingTunnel(this))
+            }.onFailure {
+                Logs.w(it)
+            }
+        } else if (startsWith("relaybaton://")) {
+            Logs.d("Try parse rb link: $this")
+            runCatching {
+                entities.add(parseRelayBaton(this))
+            }.onFailure {
+                Logs.w(it)
+            }
+        } else if (startsWith("brook://")) {
+            Logs.d("Try parse brook link: $this")
+            runCatching {
+                entities.add(parseBrook(this))
+            }.onFailure {
+                Logs.w(it)
+            }
+        } else if (startsWith("hysteria://")) {
+            Logs.d("Try parse hysteria link: $this")
+            runCatching {
+                entities.add(parseHysteria(this))
             }.onFailure {
                 Logs.w(it)
             }
         }
     }
-    entities.forEach { it.initDefaultValues() }
-    return entities
+
+    for (link in links) {
+        link.parseLink(entities)
+    }
+    for (link in linksByLine) {
+        link.parseLink(entitiesByLine)
+    }
+    var isBadLink = false
+    if (entities.onEach { it.initializeDefaultValues() }.size == entitiesByLine.onEach { it.initializeDefaultValues() }.size) run test@{
+        entities.forEachIndexed { index, bean ->
+            val lineBean = entitiesByLine[index]
+            if (bean == lineBean && bean.displayName() != lineBean.displayName()) {
+                isBadLink = true
+                return@test
+            }
+        }
+    }
+    return if (entities.size > entitiesByLine.size) entities else entitiesByLine
 }
 
-fun <T : AbstractBean> T.applyDefaultValues(): T {
-    initDefaultValues()
+fun <T : Serializable> T.applyDefaultValues(): T {
+    initializeDefaultValues()
     return this
 }

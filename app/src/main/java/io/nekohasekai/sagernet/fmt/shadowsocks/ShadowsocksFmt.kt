@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -22,19 +20,23 @@
 package io.nekohasekai.sagernet.fmt.shadowsocks
 
 import cn.hutool.core.codec.Base64
+import cn.hutool.json.JSONObject
 import com.github.shadowsocks.plugin.PluginConfiguration
 import com.github.shadowsocks.plugin.PluginManager
 import com.github.shadowsocks.plugin.PluginOptions
+import io.nekohasekai.sagernet.IPv6Mode
 import io.nekohasekai.sagernet.database.DataStore
-import io.nekohasekai.sagernet.ktx.*
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import cn.hutool.json.JSONObject as HSONObject
+import io.nekohasekai.sagernet.fmt.LOCALHOST
+import io.nekohasekai.sagernet.ktx.decodeBase64UrlSafe
+import io.nekohasekai.sagernet.ktx.queryParameter
+import io.nekohasekai.sagernet.ktx.unUrlSafe
+import io.nekohasekai.sagernet.ktx.urlSafe
+import libcore.Libcore
 
-val methodsV2fly = arrayOf(
-    "none",
-    "aes-128-gcm",
-    "aes-256-gcm",
-    "chacha20-ietf-poly1305"
+val methodsSing = arrayOf(
+    "2022-blake3-aes-128-gcm",
+    "2022-blake3-aes-256-gcm",
+    "2022-blake3-chacha20-poly1305"
 )
 
 fun PluginConfiguration.fixInvalidParams() {
@@ -59,20 +61,6 @@ fun PluginConfiguration.fixInvalidParams() {
 
     }
 
-    if (selected == "obfs-local") {
-        val options = pluginsOptions["obfs-local"]
-        if (options != null) {
-            if (options.containsKey("mode")) {
-                options["obfs"] = options["mode"]
-                options.remove("mode")
-            }
-            if (options.containsKey("host")) {
-                options["obfs-host"] = options["host"]
-                options.remove("host")
-            }
-        }
-    }
-
 }
 
 fun ShadowsocksBean.fixInvalidParams() {
@@ -85,18 +73,13 @@ fun parseShadowsocks(url: String): ShadowsocksBean {
 
     if (url.contains("@")) {
 
-        var link = url.replace("ss://", "https://").toHttpUrlOrNull()
-            ?: error("invalid ss-android link $url")
+        var link = Libcore.parseURL(url)
 
-        if (link.username.isBlank()) {
-            // fix justmysocks's shit link
-
-            link = (("https://" + url.substringAfter("ss://").substringBefore("#")
-                .decodeBase64UrlSafe())
-                .toHttpUrlOrNull() ?: error("invalid jms link $url"))
-                .newBuilder()
-                .fragment(url.substringAfter("#"))
-                .build()
+        if (link.username.isBlank()) { // fix justmysocks's shit link
+            link = Libcore.parseURL(
+                ("ss://" + url.substringAfter("ss://").substringBefore("#").decodeBase64UrlSafe())
+            )
+            link.setRawFragment(url.substringAfter("#"))
         }
 
         // ss-android style
@@ -110,8 +93,9 @@ fun parseShadowsocks(url: String): ShadowsocksBean {
                 method = link.username
                 password = link.password
                 plugin = link.queryParameter("plugin") ?: ""
-                name = link.fragment ?: ""
-
+                name = link.fragment
+                uot = link.queryParameter("udp-over-tcp") == "true" || name.contains("SUoT")
+                encryptedProtocolExtension = link.queryParameter("encrypted-protocol-extension") == "true"
                 fixInvalidParams()
 
             }
@@ -127,7 +111,9 @@ fun parseShadowsocks(url: String): ShadowsocksBean {
             method = methodAndPswd.substringBefore(":")
             password = methodAndPswd.substringAfter(":")
             plugin = link.queryParameter("plugin") ?: ""
-            name = link.fragment ?: ""
+            name = link.fragment
+            uot = link.queryParameter("udp-over-tcp") == "true" || name.contains("SUoT")
+            encryptedProtocolExtension = link.queryParameter("encrypted-protocol-extension") == "true"
 
             fixInvalidParams()
 
@@ -141,9 +127,9 @@ fun parseShadowsocks(url: String): ShadowsocksBean {
 
         if (v2Url.contains("#")) v2Url = v2Url.substringBefore("#")
 
-        val link =
-            ("https://" + v2Url.substringAfter("ss://").decodeBase64UrlSafe()).toHttpUrlOrNull()
-                ?: error("invalid v2rayN link $url")
+        val link = Libcore.parseURL(
+            ("ss://" + v2Url.substringAfter("ss://").decodeBase64UrlSafe())
+        )
 
         return ShadowsocksBean().apply {
 
@@ -166,24 +152,37 @@ fun parseShadowsocks(url: String): ShadowsocksBean {
 
 fun ShadowsocksBean.toUri(): String {
 
-    val builder = linkBuilder()
-        .username(Base64.encodeUrlSafe("$method:$password"))
-        .host(serverAddress)
-        .port(serverPort)
+    val builder = Libcore.newURL("ss")
+    builder.host = serverAddress
+    builder.port = serverPort
+    if (method.startsWith("2022")) {
+        builder.username = method
+        builder.password = password
+    } else {
+        builder.username = Base64.encodeUrlSafe("$method:$password")
+    }
 
     if (plugin.isNotBlank()) {
         builder.addQueryParameter("plugin", plugin)
     }
 
     if (name.isNotBlank()) {
-        builder.encodedFragment(name.urlSafe())
+        builder.setRawFragment(name.urlSafe())
     }
 
-    return builder.toLink("ss")
+    if (uot) {
+        builder.addQueryParameter("udp-over-tcp", "true")
+    }
+
+    if (encryptedProtocolExtension) {
+        builder.addQueryParameter("encrypted-protocol-extension", "true")
+    }
+
+    return builder.string
 
 }
 
-fun HSONObject.parseShadowsocks(): ShadowsocksBean {
+fun JSONObject.parseShadowsocks(): ShadowsocksBean {
     return ShadowsocksBean().apply {
         var pluginStr = ""
         val pId = getStr("plugin")
@@ -203,33 +202,20 @@ fun HSONObject.parseShadowsocks(): ShadowsocksBean {
     }
 }
 
-// https://github.com/shadowsocks/shadowsocks-android/blob/39f784a9d0cd191e9b8616b0b95bb2176b0fc798/core/src/main/java/com/github/shadowsocks/bg/ProxyInstance.kt#L58
-val deprecatedCiphers = arrayOf("aes-192-gcm", "chacha20", "salsa20")
 
 fun ShadowsocksBean.buildShadowsocksConfig(port: Int): String {
-    if (method in deprecatedCiphers) {
-        throw IllegalArgumentException("Cipher $method is deprecated.")
-    }
-
-    val proxyConfig = HSONObject().also {
-        it["server"] = serverAddress
-        it["server_port"] = serverPort
+    val proxyConfig = JSONObject().also {
+        it["server"] = finalAddress
+        it["server_port"] = finalPort
         it["method"] = method
         it["password"] = password
-        it["local_address"] = "127.0.0.1"
+        it["local_address"] = LOCALHOST
         it["local_port"] = port
-        it["local_udp_address"] = "127.0.0.1"
+        it["local_udp_address"] = LOCALHOST
         it["local_udp_port"] = port
         it["mode"] = "tcp_and_udp"
-        if (DataStore.enableLocalDNS) {
-            it["dns"] = "127.0.0.1:${DataStore.localDNSPort}"
-        } else {
-            it["dns"] = DataStore.remoteDNS
-        }
-
-        if (DataStore.ipv6Route && DataStore.preferIpv6) {
-            it["ipv6_first"] = true
-        }
+        it["ipv6_first"] = DataStore.ipv6Mode >= IPv6Mode.PREFER
+        it["keep_alive"] = DataStore.tcpKeepAliveInterval
     }
 
     if (plugin.isNotBlank()) {

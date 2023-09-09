@@ -23,16 +23,15 @@
                 android:layout_height="?attr/actionBarSize"
                 android:background="?attr/colorPrimary"
                 android:elevation="4dp"
-                android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
+                android:theme="?actionBarTheme"
                 android:touchscreenBlocksFocus="false"
                 app:layout_collapseMode="pin"
-                app:popupTheme="@style/ThemeOverlay.AppCompat.Light"
+                app:popupTheme="@style/ThemeOverlay.AppCompat.DayNight"
                 app:title="@string/app_name" />
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="?colorOnPrimarySurface"
                 android:orientation="vertical"
                 android:paddingTop="56dp">
 
@@ -59,31 +58,22 @@
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/appProxyModeDisable"
-                                style="@style/Widget.MaterialComponents.Chip.Choice"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="@string/off"
-                                app:textEndPadding="30dp"
-                                app:textStartPadding="30dp" />
+                                android:text="@string/off" />
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/appProxyModeOn"
-                                style="@style/Widget.MaterialComponents.Chip.Choice"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="@string/on"
-                                app:textEndPadding="30dp"
-                                app:textStartPadding="30dp" />
+                                android:text="@string/route_proxy" />
 
                             <com.google.android.material.chip.Chip
                                 android:id="@+id/appProxyModeBypass"
-                                style="@style/Widget.MaterialComponents.Chip.Choice"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:checked="true"
-                                android:text="@string/bypass_apps"
-                                app:textEndPadding="30dp"
-                                app:textStartPadding="30dp" />
+                                android:text="@string/bypass_apps" />
 
                         </com.google.android.material.chip.ChipGroup>
 
@@ -140,11 +130,9 @@
         android:scrollbarSize="0dp"
         android:visibility="gone"
         app:fastScrollAutoHide="true"
-        app:fastScrollPopupBgColor="?colorOnPrimarySurface"
         app:fastScrollPopupTextColor="?colorPrimary"
         app:fastScrollThumbColor="?colorPrimary"
         app:fastScrollThumbInactiveColor="?colorPrimary"
-        app:fastScrollTrackColor="?colorOnPrimarySurface"
         app:layout_behavior="@string/appbar_scrolling_view_behavior"
         tools:listitem="@layout/layout_apps_item" />
 

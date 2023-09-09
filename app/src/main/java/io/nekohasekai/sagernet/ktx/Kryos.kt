@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -31,6 +29,33 @@ import java.io.OutputStream
 
 fun InputStream.byteBuffer() = ByteBufferInput(this)
 fun OutputStream.byteBuffer() = ByteBufferOutput(this)
+
+fun ByteBufferInput.readStringList(): List<String> {
+    return mutableListOf<String>().apply {
+        repeat(readInt()) {
+            add(readString())
+        }
+    }
+}
+
+fun ByteBufferInput.readStringSet(): Set<String> {
+    return linkedSetOf<String>().apply {
+        repeat(readInt()) {
+            add(readString())
+        }
+    }
+}
+
+
+fun ByteBufferOutput.writeStringList(list: List<String>) {
+    writeInt(list.size)
+    for (str in list) writeString(str)
+}
+
+fun ByteBufferOutput.writeStringList(list: Set<String>) {
+    writeInt(list.size)
+    for (str in list) writeString(str)
+}
 
 fun Parcelable.marshall(): ByteArray {
     val parcel = Parcel.obtain()

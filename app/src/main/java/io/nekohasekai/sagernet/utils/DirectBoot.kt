@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -43,7 +43,7 @@ object DirectBoot : BroadcastReceiver() {
     private var registered = false
 
     fun getDeviceProfile(): ProxyEntity? = try {
-        file.readBytes().unmarshall(::ProxyEntity)
+        file.readBytes().unmarshall { ProxyEntity.CREATOR.createFromParcel(it) }
     } catch (_: IOException) {
         null
     }

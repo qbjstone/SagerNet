@@ -1,6 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
  * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
  *                                                                            *
@@ -27,7 +27,6 @@ import android.text.format.Formatter
 import android.util.AttributeSet
 import android.view.View
 import android.widget.TextView
-import androidx.activity.viewModels
 import androidx.appcompat.widget.TooltipCompat
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import androidx.lifecycle.lifecycleScope
@@ -35,8 +34,9 @@ import androidx.lifecycle.whenStarted
 import com.google.android.material.bottomappbar.BottomAppBar
 import io.nekohasekai.sagernet.R
 import io.nekohasekai.sagernet.bg.BaseService
+import io.nekohasekai.sagernet.database.DataStore
+import io.nekohasekai.sagernet.ktx.*
 import io.nekohasekai.sagernet.ui.MainActivity
-import io.nekohasekai.sagernet.utils.HttpsTest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -44,33 +44,48 @@ import kotlinx.coroutines.launch
 class StatsBar @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null,
     defStyleAttr: Int = R.attr.bottomAppBarStyle,
-) :
-    BottomAppBar(context, attrs, defStyleAttr) {
+) : BottomAppBar(context, attrs, defStyleAttr) {
     private lateinit var statusText: TextView
     private lateinit var txText: TextView
     private lateinit var rxText: TextView
-    private val tester by (context as MainActivity).viewModels<HttpsTest>()
-    private lateinit var behavior: Behavior
-    override fun getBehavior(): Behavior {
-        if (!this::behavior.isInitialized) behavior = object : Behavior() {
-            override fun onNestedScroll(
-                coordinatorLayout: CoordinatorLayout, child: BottomAppBar, target: View,
-                dxConsumed: Int, dyConsumed: Int, dxUnconsumed: Int, dyUnconsumed: Int,
-                type: Int, consumed: IntArray,
-            ) {
-                super.onNestedScroll(coordinatorLayout,
-                    child,
-                    target,
-                    dxConsumed,
-                    dyConsumed + dyUnconsumed,
-                    dxUnconsumed,
-                    0,
-                    type,
-                    consumed)
-            }
-        }
+    private lateinit var behavior: YourBehavior
+    override fun getBehavior(): YourBehavior {
+        if (!this::behavior.isInitialized) behavior = YourBehavior()
         return behavior
     }
+
+    class YourBehavior : Behavior() {
+        override fun onNestedScroll(
+            coordinatorLayout: CoordinatorLayout, child: BottomAppBar, target: View,
+            dxConsumed: Int, dyConsumed: Int, dxUnconsumed: Int, dyUnconsumed: Int,
+            type: Int, consumed: IntArray,
+        ) {
+            super.onNestedScroll(
+                coordinatorLayout,
+                child,
+                target,
+                dxConsumed,
+                dyConsumed + dyUnconsumed,
+                dxUnconsumed,
+                0,
+                type,
+                consumed
+            )
+        }
+
+        var hide = false
+
+        override fun slideUp(child: BottomAppBar) {
+            hide = false
+            super.slideUp(child)
+        }
+
+        override fun slideDown(child: BottomAppBar) {
+            hide = true
+            super.slideDown(child)
+        }
+    }
+
 
     override fun setOnClickListener(l: OnClickListener?) {
         statusText = findViewById(R.id.status)
@@ -93,41 +108,73 @@ class StatsBar @JvmOverloads constructor(
         if ((state == BaseService.State.Connected).also { hideOnScroll = it }) {
             postWhenStarted {
                 performShow()
-            }
-            tester.status.observe(activity) {
-                it.retrieve(::setStatus) { msg ->
-                    activity.snackbar(msg).show()
-                }
+                setStatus(app.getText(R.string.vpn_connected))
             }
         } else {
             postWhenStarted {
                 performHide()
             }
             updateTraffic(0, 0)
-            tester.status.removeObservers(activity)
-            if (state != BaseService.State.Idle) tester.invalidate()
-            setStatus(context.getText(when (state) {
-                BaseService.State.Connecting -> R.string.connecting
-                BaseService.State.Stopping -> R.string.stopping
-                else -> R.string.not_connected
-            }))
+            setStatus(
+                context.getText(
+                    when (state) {
+                        BaseService.State.Connecting -> R.string.connecting
+                        BaseService.State.Stopping -> R.string.stopping
+                        else -> R.string.not_connected
+                    }
+                )
+            )
         }
     }
 
     @SuppressLint("SetTextI18n")
     fun updateTraffic(txRate: Long, rxRate: Long) {
         txText.text = "▲  ${
-            context.getString(R.string.speed,
-                Formatter.formatFileSize(context, txRate))
+            context.getString(
+                R.string.speed, Formatter.formatFileSize(context, txRate)
+            )
         }"
         rxText.text = "▼  ${
-            context.getString(R.string.speed,
-                Formatter.formatFileSize(context, rxRate))
+            context.getString(
+                R.string.speed, Formatter.formatFileSize(context, rxRate)
+            )
         }"
     }
 
     fun testConnection() {
-        tester.testConnection()
+        val activity = context as MainActivity
+        isEnabled = false
+        setStatus(app.getText(R.string.connection_test_testing))
+        runOnDefaultDispatcher {
+            try {
+                val elapsed = activity.urlTest()
+                onMainDispatcher {
+                    isEnabled = true
+                    setStatus(
+                        app.getString(
+                            if (DataStore.connectionTestURL.startsWith("https://")) {
+                                R.string.connection_test_available
+                            } else {
+                                R.string.connection_test_available_http
+                            }, elapsed
+                        )
+                    )
+                }
+
+            } catch (e: Exception) {
+                Logs.w(e)
+                onMainDispatcher {
+                    isEnabled = true
+                    setStatus(app.getText(R.string.connection_test_testing))
+
+                    activity.snackbar(
+                        app.getString(
+                            R.string.connection_test_error, e.readableMessage
+                        )
+                    ).show()
+                }
+            }
+        }
     }
 
 }

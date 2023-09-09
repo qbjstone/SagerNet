@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -23,7 +21,8 @@ package io.nekohasekai.sagernet.ktx
 
 import android.util.Log
 import cn.hutool.core.util.StrUtil
-import io.nekohasekai.sagernet.BuildConfig
+import java.io.InputStream
+import java.io.OutputStream
 
 object Logs {
 
@@ -34,25 +33,25 @@ object Logs {
 
     fun v(message: String) {
         //  if (BuildConfig.DEBUG) {
-            Log.v(mkTag(), message)
+        Log.v(mkTag(), message)
 //        }
     }
 
     fun v(message: String, exception: Throwable) {
         //  if (BuildConfig.DEBUG) {
-            Log.v(mkTag(), message, exception)
+        Log.v(mkTag(), message, exception)
 //        }
     }
 
     fun d(message: String) {
         //  if (BuildConfig.DEBUG) {
-            Log.d(mkTag(), message)
+        Log.d(mkTag(), message)
 //        }
     }
 
     fun d(message: String, exception: Throwable) {
         //  if (BuildConfig.DEBUG) {
-            Log.d(mkTag(), message, exception)
+        Log.d(mkTag(), message, exception)
 //        }
     }
 
@@ -84,4 +83,12 @@ object Logs {
         Log.e(mkTag(), message, exception)
     }
 
+}
+
+fun InputStream.use(out: OutputStream) {
+    use { input ->
+        out.use { output ->
+            input.copyTo(output)
+        }
+    }
 }

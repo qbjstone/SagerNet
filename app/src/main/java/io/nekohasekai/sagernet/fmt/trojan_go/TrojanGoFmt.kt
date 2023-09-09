@@ -1,8 +1,6 @@
 /******************************************************************************
  *                                                                            *
- * Copyright (C) 2021 by nekohasekai <sekai@neko.services>                    *
- * Copyright (C) 2021 by Max Lv <max.c.lv@gmail.com>                          *
- * Copyright (C) 2021 by Mygod Studio <contact-shadowsocks-android@mygod.be>  *
+ * Copyright (C) 2021 by nekohasekai <contact-sagernet@sekai.icu>             *
  *                                                                            *
  * This program is free software: you can redistribute it and/or modify       *
  * it under the terms of the GNU General Public License as published by       *
@@ -26,18 +24,19 @@ import cn.hutool.json.JSONObject
 import com.github.shadowsocks.plugin.PluginConfiguration
 import com.github.shadowsocks.plugin.PluginManager
 import com.github.shadowsocks.plugin.PluginOptions
-import io.nekohasekai.sagernet.BuildConfig
+import io.nekohasekai.sagernet.IPv6Mode
 import io.nekohasekai.sagernet.database.DataStore
+import io.nekohasekai.sagernet.fmt.LOCALHOST
 import io.nekohasekai.sagernet.fmt.shadowsocks.fixInvalidParams
 import io.nekohasekai.sagernet.ktx.applyDefaultValues
-import io.nekohasekai.sagernet.ktx.linkBuilder
-import io.nekohasekai.sagernet.ktx.toLink
+import io.nekohasekai.sagernet.ktx.isIpAddress
+import io.nekohasekai.sagernet.ktx.queryParameter
 import io.nekohasekai.sagernet.ktx.urlSafe
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import libcore.Libcore
 
 fun parseTrojanGo(server: String): TrojanGoBean {
-    val link = server.replace("trojan-go://", "https://").toHttpUrlOrNull()
-        ?: error("invalid trojan-link link $server")
+    val link = Libcore.parseURL(server)
+
     return TrojanGoBean().apply {
         serverAddress = link.host
         serverPort = link.port
@@ -74,10 +73,11 @@ fun parseTrojanGo(server: String): TrojanGoBean {
 }
 
 fun TrojanGoBean.toUri(): String {
-    val builder = linkBuilder()
-        .username(password)
-        .host(serverAddress)
-        .port(serverPort)
+    val builder = Libcore.newURL("trojan-go")
+    builder.host = serverAddress
+    builder.port = serverPort
+    builder.username = password
+
     if (sni.isNotBlank()) {
         builder.addQueryParameter("sni", sni)
     }
@@ -103,33 +103,29 @@ fun TrojanGoBean.toUri(): String {
     }
 
     if (name.isNotBlank()) {
-        builder.encodedFragment(name.urlSafe())
+        builder.setRawFragment(name.urlSafe())
     }
 
-    return builder.toLink("trojan-go")
+    return builder.string
 }
 
-fun TrojanGoBean.buildTrojanGoConfig(port: Int, chain: Boolean, index: Int): String {
+fun TrojanGoBean.buildTrojanGoConfig(port: Int, mux: Boolean): String {
     return JSONObject().also { conf ->
         conf["run_type"] = "client"
-        conf["local_addr"] = "127.0.0.1"
+        conf["local_addr"] = LOCALHOST
         conf["local_port"] = port
-        conf["remote_addr"] = serverAddress
-        conf["remote_port"] = serverPort
+        conf["remote_addr"] = finalAddress
+        conf["remote_port"] = finalPort
         conf["password"] = JSONArray().apply {
             add(password)
         }
-        conf["log_level"] = if (BuildConfig.DEBUG) 0 else 2
-        if (index == 0 && DataStore.enableMux) {
-            conf["mux"] = JSONObject().also {
-                it["enabled"] = true
-                it["concurrency"] = DataStore.muxConcurrency
-            }
+        conf["log_level"] = if (DataStore.enableLog) 0 else 2
+        if (mux) conf["mux"] = JSONObject().also {
+            it["enabled"] = true
+            it["concurrency"] = DataStore.muxConcurrency
         }
-        if (!DataStore.preferIpv6) {
-            conf["tcp"] = JSONObject().also {
-                it["prefer_ipv4"] = true
-            }
+        conf["tcp"] = JSONObject().also {
+            it["prefer_ipv4"] = DataStore.ipv6Mode <= IPv6Mode.ENABLE
         }
 
         when (type) {
@@ -142,8 +138,13 @@ fun TrojanGoBean.buildTrojanGoConfig(port: Int, chain: Boolean, index: Int): Str
             }
         }
 
-        if (sni.isNotBlank()) conf["ssl"] = JSONObject().also {
-            it["sni"] = sni
+        if (sni.isBlank() && finalAddress == LOCALHOST && !serverAddress.isIpAddress()) {
+            sni = serverAddress
+        }
+
+        conf["ssl"] = JSONObject().also {
+            if (sni.isNotBlank()) it["sni"] = sni
+            if (allowInsecure) it["verify"] = false
         }
 
         when {
@@ -151,8 +152,7 @@ fun TrojanGoBean.buildTrojanGoConfig(port: Int, chain: Boolean, index: Int): Str
             }
             encryption.startsWith("ss;") -> conf["shadowsocks"] = JSONObject().also {
                 it["enabled"] = true
-                it["method"] =
-                    encryption.substringAfter(";").substringBefore(":")
+                it["method"] = encryption.substringAfter(";").substringBefore(":")
                 it["password"] = encryption.substringAfter(":")
             }
         }
@@ -168,13 +168,13 @@ fun TrojanGoBean.buildTrojanGoConfig(port: Int, chain: Boolean, index: Int): Str
                 }
             }
         }
-
-        if (chain) conf["forward_proxy"] = JSONObject().also {
-            it["enabled"] = true
-            it["proxy_addr"] = "127.0.0.1"
-            it["proxy_port"] = port + 1
-        }
     }.toStringPretty()
+}
+
+fun buildCustomTrojanConfig(config: String, port: Int): String {
+    val conf = JSONObject(config)
+    conf["local_port"] = port
+    return conf.toStringPretty()
 }
 
 fun JSONObject.parseTrojanGo(): TrojanGoBean {
@@ -191,6 +191,7 @@ fun JSONObject.parseTrojanGo(): TrojanGoBean {
         }
         getJSONObject("ssl")?.apply {
             sni = getStr("sni", sni)
+            allowInsecure = getBool("verify", true)
         }
         getJSONObject("websocket")?.apply {
             if (getBool("enabled", false)) {
